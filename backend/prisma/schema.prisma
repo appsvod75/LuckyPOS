@@ -1,0 +1,385 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Branch {
+  id            Int            @id @default(autoincrement())
+  name          String
+  address       String?
+  phone         String?
+  isActive      Boolean        @default(true) @map("is_active")
+  colorHex      String         @default("#3b82f6") @map("color_hex")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  auditLogs     AuditLog[]
+  cashClosings  CashClosing[]
+  expenses      Expense[]
+  inventory     Inventory[]
+  lots          InventoryLot[]
+  purchases     PurchaseH[]
+  salesGoals    SalesGoal[]
+  sales         SaleH[]
+  transfersFrom Transfer[]     @relation("TransfersFrom")
+  transfersTo   Transfer[]     @relation("TransfersTo")
+  users         User[]
+
+  @@map("branches")
+}
+
+model Role {
+  id          Int     @id @default(autoincrement())
+  name        String
+  permissions String?
+  users       User[]
+
+  @@map("roles")
+}
+
+model User {
+  id             Int             @id @default(autoincrement())
+  name           String
+  pinHash        String          @map("pin_hash")
+  roleId         Int?            @map("role_id")
+  branchId       Int?            @map("branch_id")
+  isActive       Boolean         @default(true) @map("is_active")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  auditLogs      AuditLog[]
+  clientPayments ClientPayment[]
+  expenses       Expense[]
+  sales          SaleH[]
+  transfers      Transfer[]
+  purchases      PurchaseH[]
+  branch         Branch?         @relation(fields: [branchId], references: [id])
+  role           Role?           @relation(fields: [roleId], references: [id])
+
+  @@map("users")
+}
+
+model Category {
+  id       Int       @id @default(autoincrement())
+  name     String
+  icon     String?
+  colorHex String?   @map("color_hex")
+  isActive Boolean   @default(true) @map("is_active")
+  products Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id              Int               @id @default(autoincrement())
+  sku             String?           @unique
+  name            String
+  description     String?           @db.LongText
+  imageUrl        String?           @map("image_url")
+  categoryId      Int?              @map("category_id")
+  basePrice       Decimal           @map("base_price")
+  averageCost     Decimal           @default(0) @map("average_cost")
+  isMedicine      Boolean           @default(false) @map("is_medicine")
+  isService       Boolean           @default(false) @map("is_service")
+  isActive        Boolean           @default(true) @map("is_active")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  aiCaches        AiCache[]
+  inventory       Inventory[]
+  lots            InventoryLot[]
+  providers       ProductProvider[]
+  variants        ProductVariant[]
+  category        Category?         @relation(fields: [categoryId], references: [id])
+  purchaseDetails PurchaseD[]
+  saleDetails     SaleD[]
+  transferDetails TransferDetail[]
+
+  @@map("products")
+}
+
+model ProductVariant {
+  id        Int     @id @default(autoincrement())
+  productId Int     @map("product_id")
+  name      String  @default("Unidad")
+  quantity  Int
+  price     Decimal
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("product_variants")
+}
+
+model Inventory {
+  id         Int     @id @default(autoincrement())
+  branchId   Int     @map("branch_id")
+  productId  Int     @map("product_id")
+  stockLevel Int     @default(0) @map("stock_level")
+  minStock   Int     @default(5) @map("min_stock")
+  maxStock   Int     @default(100) @map("max_stock")
+  product    Product @relation(fields: [productId], references: [id])
+  branch     Branch  @relation(fields: [branchId], references: [id])
+
+  @@unique([branchId, productId])
+  @@map("inventory")
+}
+
+model InventoryLot {
+  id             Int       @id @default(autoincrement())
+  productId      Int       @map("product_id")
+  branchId       Int       @map("branch_id")
+  batchNumber    String?   @map("batch_number")
+  expirationDate DateTime? @map("expiration_date")
+  quantity       Int
+  createdAt      DateTime  @default(now()) @map("created_at")
+  product        Product   @relation(fields: [productId], references: [id])
+  branch         Branch    @relation(fields: [branchId], references: [id])
+
+  @@map("inventory_lots")
+}
+
+model Provider {
+  id        Int               @id @default(autoincrement())
+  name      String
+  vendor    String?
+  phone     String?
+  email     String?
+  address   String?
+  isActive  Boolean           @default(true) @map("is_active")
+  createdAt DateTime          @default(now()) @map("created_at")
+  products  ProductProvider[]
+  purchases PurchaseH[]
+
+  @@map("providers")
+}
+
+model ProductProvider {
+  productId  Int      @map("product_id")
+  providerId Int      @map("provider_id")
+  preference Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at")
+  provider   Provider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([productId, providerId])
+  @@map("product_providers")
+}
+
+model PurchaseH {
+  id            Int         @id @default(autoincrement())
+  branchId      Int         @map("branch_id")
+  userId        Int         @map("user_id")
+  providerId    Int?        @map("provider_id")
+  invoiceNumber String?     @map("invoice_number")
+  total         Decimal
+  paymentType   String      @default("CASH") @map("payment_type")
+  balance       Decimal     @default(0)
+  createdAt     DateTime    @default(now()) @map("created_at")
+  details       PurchaseD[]
+  user          User        @relation(fields: [userId], references: [id])
+  provider      Provider?   @relation(fields: [providerId], references: [id])
+  branch        Branch      @relation(fields: [branchId], references: [id])
+
+  @@map("purchases_h")
+}
+
+model PurchaseD {
+  id          Int       @id @default(autoincrement())
+  purchaseHId Int       @map("purchase_h_id")
+  productId   Int       @map("product_id")
+  quantity    Int
+  unitCost    Decimal   @map("unit_cost")
+  subtotal    Decimal
+  product     Product   @relation(fields: [productId], references: [id])
+  purchaseH   PurchaseH @relation(fields: [purchaseHId], references: [id], onDelete: Cascade)
+
+  @@map("purchases_d")
+}
+
+model Client {
+  id             Int             @id @default(autoincrement())
+  name           String
+  documentId     String?         @map("document_id")
+  phone          String?
+  email          String?
+  address        String?
+  isActive       Boolean         @default(true) @map("is_active")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  clientPayments ClientPayment[]
+  sales          SaleH[]
+
+  @@map("clients")
+}
+
+model SaleH {
+  id                  Int                  @id @default(autoincrement())
+  branchId            Int                  @map("branch_id")
+  userId              Int                  @map("user_id")
+  total               Decimal
+  tax                 Decimal              @default(0)
+  discount            Decimal              @default(0)
+  paymentMethod       String               @default("CASH") @map("payment_method")
+  balance             Decimal              @default(0)
+  amountTendered      Decimal?             @map("amount_tendered")
+  change              Decimal?
+  createdAt           DateTime             @default(now()) @map("created_at")
+  clientId            Int?                 @default(1) @map("client_id")
+  dueDate             DateTime?            @map("due_date")
+  paymentApplications PaymentApplication[]
+  details             SaleD[]
+  user                User                 @relation(fields: [userId], references: [id])
+  branch              Branch               @relation(fields: [branchId], references: [id])
+  client              Client?              @relation(fields: [clientId], references: [id])
+
+  @@map("sales_h")
+}
+
+model SaleD {
+  id        Int     @id @default(autoincrement())
+  saleHId   Int     @map("sale_h_id")
+  productId Int     @map("product_id")
+  quantity  Int
+  unitPrice Decimal @map("unit_price")
+  subtotal  Decimal
+  notes     String?
+  saleH     SaleH   @relation(fields: [saleHId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@map("sales_d")
+}
+
+model Transfer {
+  id           Int              @id @default(autoincrement())
+  fromBranchId Int              @map("from_branch_id")
+  toBranchId   Int              @map("to_branch_id")
+  userId       Int              @map("user_id")
+  status       String           @default("PENDING")
+  createdAt    DateTime         @default(now()) @map("created_at")
+  details      TransferDetail[]
+  fromBranch   Branch           @relation("TransfersFrom", fields: [fromBranchId], references: [id])
+  toBranch     Branch           @relation("TransfersTo", fields: [toBranchId], references: [id])
+  user         User             @relation(fields: [userId], references: [id])
+
+  @@map("transfers")
+}
+
+model TransferDetail {
+  id         Int      @id @default(autoincrement())
+  transferId Int      @map("transfer_id")
+  productId  Int      @map("product_id")
+  quantity   Int
+  transfer   Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [productId], references: [id])
+
+  @@map("transfer_details")
+}
+
+model AiCache {
+  id           Int      @id @default(autoincrement())
+  productId    Int      @map("product_id")
+  promptHash   String?  @map("prompt_hash")
+  responseJson String?  @map("response_json")
+  createdAt    DateTime @default(now()) @map("created_at")
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("ai_cache")
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int?     @map("user_id")
+  branchId  Int?     @map("branch_id")
+  action    String
+  details   String?
+  ipAddress String?  @map("ip_address")
+  timestamp DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id])
+  branch    Branch?  @relation(fields: [branchId], references: [id])
+
+  @@map("audit_logs")
+}
+
+model MasterConfig {
+  id              Int      @id @default(autoincrement())
+  businessName    String?  @map("business_name")
+  address         String?
+  phone           String?
+  logoUrl         String?  @map("logo_url")
+  geminiApiKey    String?  @map("gemini_api_key")
+  ticketHeader    String?  @map("ticket_header")
+  ticketFooter    String?  @map("ticket_footer")
+  autoClosingTime String?  @default("23:59") @map("auto_closing_time")
+  sidebarConfig   Json?    @map("sidebar_config")
+  adminPin        String?  @map("admin_pin")
+  emailWebhookUrl String?  @map("email_webhook_url")
+  enableEmailTickets Boolean @default(false) @map("enable_email_tickets")
+  ticketWidth     String   @default("58mm") @map("ticket_width")
+  enableQrCode    Boolean  @default(false) @map("enable_qr_code")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("master_config")
+}
+
+model Expense {
+  id          Int      @id @default(autoincrement())
+  branchId    Int      @map("branch_id")
+  userId      Int      @map("user_id")
+  description String
+  amount      Decimal
+  createdAt   DateTime @default(now()) @map("created_at")
+  user        User     @relation(fields: [userId], references: [id])
+  branch      Branch   @relation(fields: [branchId], references: [id])
+
+  @@map("expenses")
+}
+
+model ClientPayment {
+  id           Int                  @id @default(autoincrement())
+  clientId     Int                  @map("client_id")
+  userId       Int                  @map("user_id")
+  amount       Decimal
+  createdAt    DateTime             @default(now()) @map("created_at")
+  user         User                 @relation(fields: [userId], references: [id])
+  client       Client               @relation(fields: [clientId], references: [id])
+  applications PaymentApplication[]
+
+  @@map("client_payments")
+}
+
+model PaymentApplication {
+  id            Int           @id @default(autoincrement())
+  paymentId     Int           @map("payment_id")
+  saleId        Int           @map("sale_id")
+  amountApplied Decimal       @map("amount_applied")
+  sale          SaleH         @relation(fields: [saleId], references: [id])
+  payment       ClientPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@map("payment_applications")
+}
+
+model CashClosing {
+  id            Int      @id @default(autoincrement())
+  date          DateTime
+  branchId      Int      @map("branch_id")
+  totalSales    Decimal  @map("total_sales")
+  totalExpenses Decimal  @map("total_expenses")
+  netAmount     Decimal  @map("net_amount")
+  createdAt     DateTime @default(now()) @map("created_at")
+  branch        Branch   @relation(fields: [branchId], references: [id])
+
+  @@unique([date, branchId])
+  @@map("cash_closings")
+}
+
+model SalesGoal {
+  id            Int      @id @default(autoincrement())
+  branchId      Int      @map("branch_id")
+  monthYear     String   @map("month_year")
+  targetAmount  Decimal  @map("target_amount")
+  totalWorkDays Int      @default(30) @map("total_work_days")
+  manualSales   Decimal? @map("manual_sales")
+  manualDays    Int?     @map("manual_days")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  branch        Branch   @relation(fields: [branchId], references: [id])
+
+  @@unique([branchId, monthYear])
+  @@map("sales_goals")
+}
