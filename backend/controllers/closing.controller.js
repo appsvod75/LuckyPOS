@@ -1,5 +1,6 @@
 const prisma = require('../db');
-const { startOfDay, endOfDay } = require('date-fns');
+const { getIO } = require('../utils/socket');
+const { localDateStr, startOfLocalDay, endOfLocalDay, localDate } = require('../utils/timezone');
 
 const getClosings = async (req, res) => {
     try {
@@ -20,8 +21,8 @@ const getClosings = async (req, res) => {
 
         if (startDate || endDate) {
             whereClause.date = {};
-            if (startDate) whereClause.date.gte = new Date(`${startDate}T00:00:00-06:00`);
-            if (endDate) whereClause.date.lte = new Date(`${endDate}T23:59:59-06:00`);
+            if (startDate) whereClause.date.gte = startOfLocalDay(startDate);
+            if (endDate) whereClause.date.lte = endOfLocalDay(endDate);
         }
 
         // Filter out empty days (no sales AND no expenses)
@@ -77,12 +78,13 @@ const getClosings = async (req, res) => {
 const forceClosing = async (req, res) => {
     try {
         const { date } = req.body;
-        const targetDate = date ? new Date(`${date}T12:00:00-06:00`) : new Date();
+        const targetDate = date ? localDate(date, '12') : new Date();
         
         // Lazy load service to avoid circular dependency crash
         const { runClosingForDate } = require('../services/cron.service');
         await runClosingForDate(targetDate);
         
+        if (getIO()) getIO().emit('CLOSING_UPDATED', { date: targetDate });
         res.json({ message: `Cierre de caja recalculado para ${targetDate.toLocaleDateString()}` });
     } catch (error) {
         console.error('Error in forceClosing:', error);
@@ -92,9 +94,8 @@ const forceClosing = async (req, res) => {
 
 const getTodaySummary = async (req, res) => {
     try {
-        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/El_Salvador' });
-        const start = new Date(`${todayStr}T00:00:00-06:00`);
-        const end = new Date(`${todayStr}T23:59:59-06:00`);
+        const start = startOfLocalDay();
+        const end = endOfLocalDay();
         const user_role = req.user.role;
         const user_branch_id = req.user.branch_id;
 
@@ -143,8 +144,8 @@ const getClosingDetails = async (req, res) => {
         const { date, branchId } = req.query;
         if (!date || !branchId) return res.status(400).json({ message: 'Fecha y sucursal requeridos' });
 
-        const start = new Date(`${date}T00:00:00-06:00`);
-        const end = new Date(`${date}T23:59:59-06:00`);
+        const start = startOfLocalDay(date);
+        const end = endOfLocalDay(date);
 
         const [sales, expenses] = await Promise.all([
             prisma.saleH.findMany({

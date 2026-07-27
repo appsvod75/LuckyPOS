@@ -25,6 +25,7 @@ import CashClosings from './pages/CashClosings';
 import Projections from './pages/Projections';
 import DailySummary from './pages/DailySummary';
 import Transfers from './pages/Transfers';
+import ProductLookup from './pages/ProductLookup';
 import { CartProvider } from './context/CartContext';
 import ReloadPrompt from './components/ReloadPrompt';
 import PWAInstallBanner from './components/PWAInstallBanner';
@@ -112,7 +113,7 @@ const App: React.FC = () => {
             }
         };
 
-        // --- SOCKET.IO FORCED LOGOUT ---
+        // --- SOCKET.IO REAL-TIME EVENT HANDLERS ---
         socket.on(socketEvents.FORCE_LOGOUT, (data: any) => {
             console.log('⚠️ CIERRE FORZADO RECIBIDO:', data.message);
             import('react-hot-toast').then(({ toast }) => {
@@ -124,11 +125,110 @@ const App: React.FC = () => {
             }, 3000);
         });
 
+        socket.on(socketEvents.USER_CREATED, (data: any) => {
+            import('react-hot-toast').then(({ toast }) => toast.success(`Nuevo usuario: ${data.name}`, { duration: 3000 }));
+        });
+        socket.on(socketEvents.USER_UPDATED, (data: any) => {
+            import('react-hot-toast').then(({ toast }) => toast.success(`Usuario actualizado: ${data.name}`, { duration: 3000 }));
+        });
+
+        socket.on(socketEvents.PRODUCT_CREATED, (data: any) => {
+            import('react-hot-toast').then(({ toast }) => toast.success(`Nuevo producto: ${data.name}`, { duration: 3000 }));
+        });
+        socket.on(socketEvents.PRODUCT_UPDATED, (data: any) => {
+            import('react-hot-toast').then(({ toast }) => toast.success(`Producto actualizado: ${data.name || data.productId}`, { duration: 3000 }));
+        });
+        socket.on(socketEvents.PRODUCT_DELETED, (data: any) => {
+            import('react-hot-toast').then(({ toast }) => toast('Producto eliminado', { icon: '🗑️', duration: 3000 }));
+        });
+
+        socket.on(socketEvents.CATEGORY_CREATED, () => {
+            import('react-hot-toast').then(({ toast }) => toast.success('Nueva categoría creada', { duration: 2000 }));
+        });
+        socket.on(socketEvents.CATEGORY_UPDATED, () => {
+            import('react-hot-toast').then(({ toast }) => toast.success('Categoría actualizada', { duration: 2000 }));
+        });
+        socket.on(socketEvents.CATEGORY_DELETED, () => {
+            import('react-hot-toast').then(({ toast }) => toast('Categoría eliminada', { icon: '🗑️', duration: 2000 }));
+        });
+
+        socket.on(socketEvents.SALE_CREATED, (data: any) => {
+            import('react-hot-toast').then(({ toast }) => toast.success(`Venta #${data.saleId} registrada`, { duration: 2000 }));
+        });
+
+        socket.on(socketEvents.SALE_DELETED, () => {
+            import('react-hot-toast').then(({ toast }) => toast('Venta anulada', { icon: '🗑️', duration: 3000 }));
+        });
+
+        socket.on(socketEvents.PURCHASE_CREATED, (data: any) => {
+            import('react-hot-toast').then(({ toast }) => toast.success(`Compra #${data.purchaseId} registrada`, { duration: 2000 }));
+        });
+        socket.on(socketEvents.PURCHASE_UPDATED, () => {
+            import('react-hot-toast').then(({ toast }) => toast.success('Compra actualizada', { duration: 2000 }));
+        });
+
+        socket.on(socketEvents.CLIENT_CREATED, (data: any) => {
+            import('react-hot-toast').then(({ toast }) => toast.success(`Cliente registrado: ${data.name || data.data?.name}`, { duration: 3000 }));
+        });
+        socket.on(socketEvents.CLIENT_UPDATED, () => {
+            import('react-hot-toast').then(({ toast }) => toast.success('Cliente actualizado', { duration: 2000 }));
+        });
+
+        socket.on(socketEvents.PROVIDER_CREATED, (data: any) => {
+            import('react-hot-toast').then(({ toast }) => toast.success(`Nuevo proveedor: ${data.name}`, { duration: 2000 }));
+        });
+        socket.on(socketEvents.PROVIDER_UPDATED, (data: any) => {
+            import('react-hot-toast').then(({ toast }) => toast.success(`Proveedor actualizado: ${data.name}`, { duration: 2000 }));
+        });
+        socket.on(socketEvents.PROVIDER_DELETED, () => {
+            import('react-hot-toast').then(({ toast }) => toast('Proveedor desactivado', { icon: '🏢', duration: 2000 }));
+        });
+
+        socket.on(socketEvents.BRANCH_CREATED, (data: any) => {
+            import('react-hot-toast').then(({ toast }) => toast.success(`Nueva sucursal: ${data.name}`, { duration: 3000 }));
+        });
+        socket.on(socketEvents.BRANCH_UPDATED, (data: any) => {
+            import('react-hot-toast').then(({ toast }) => toast.success(`Sucursal actualizada: ${data.name}`, { duration: 3000 }));
+        });
+        socket.on(socketEvents.BRANCH_DELETED, () => {
+            import('react-hot-toast').then(({ toast }) => toast('Sucursal desactivada', { icon: '🏪', duration: 3000 }));
+        });
+
+        socket.on(socketEvents.EXPENSE_CREATED, () => {
+            import('react-hot-toast').then(({ toast }) => toast.success('Gasto registrado', { duration: 2000 }));
+        });
+        socket.on(socketEvents.EXPENSE_UPDATED, () => {
+            import('react-hot-toast').then(({ toast }) => toast.success('Gasto actualizado', { duration: 2000 }));
+        });
+        socket.on(socketEvents.EXPENSE_DELETED, () => {
+            import('react-hot-toast').then(({ toast }) => toast('Gasto eliminado', { icon: '🗑️', duration: 2000 }));
+        });
+
+        socket.on(socketEvents.CLOSING_UPDATED, () => {
+            import('react-hot-toast').then(({ toast }) => toast.success('Cierre de caja recalculado', { duration: 3000 }));
+        });
+
+        socket.on(socketEvents.CONFIG_UPDATED, () => {
+            import('react-hot-toast').then(({ toast }) => toast.success('Configuración actualizada', { duration: 2000 }));
+        });
+
+        socket.on(socketEvents.GOAL_UPDATED, () => {
+            import('react-hot-toast').then(({ toast }) => toast.success('Meta de ventas actualizada', { duration: 2000 }));
+        });
+
+        socket.on(socketEvents.DATA_RESET, (data: any) => {
+            import('react-hot-toast').then(({ toast }) => toast(`Reset de datos: ${data.type}`, { icon: '⚠️', duration: 4000 }));
+        });
+
+        socket.on(socketEvents.BACKUP_CREATED, () => {
+            import('react-hot-toast').then(({ toast }) => toast.success('Backup creado', { duration: 2000 }));
+        });
+
         document.addEventListener('visibilitychange', handleVisibilityChange);
         return () => {
             window.removeEventListener('error', handleAssetError, true);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
-            // We don't disconnect central socket here to keep it alive for other components
+            Object.values(socketEvents).forEach(event => socket.off(event));
         };
     }, []);
 
@@ -247,6 +347,14 @@ const App: React.FC = () => {
                         element={
                             <ProtectedRoute>
                                 <Projections />
+                            </ProtectedRoute>
+                        }
+                    />
+                    <Route
+                        path="/lookup"
+                        element={
+                            <ProtectedRoute>
+                                <ProductLookup />
                             </ProtectedRoute>
                         }
                     />

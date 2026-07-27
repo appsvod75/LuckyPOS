@@ -71,8 +71,8 @@ const Replenishment: React.FC = () => {
     }, []);
 
     const filteredItems = items.filter(item => {
-        const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (item.sku && item.sku.toLowerCase().includes(searchTerm.toLowerCase()));
+        const matchesSearch = item.name.toLowerCase()?.includes(searchTerm.toLowerCase()) ||
+            (item.sku && item.sku.toLowerCase()?.includes(searchTerm.toLowerCase()));
         const matchesBranch = selectedBranch === 'all' || item.branchId.toString() === selectedBranch;
         return matchesSearch && matchesBranch;
     });

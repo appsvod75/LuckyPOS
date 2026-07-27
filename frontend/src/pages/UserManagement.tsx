@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from '../components/Sidebar';
 import { adminAuthApi, branchApi } from '../services/api';
-import { Users as UsersIcon, Plus, Edit, Shield, MapPin, CheckCircle, XCircle, UserPlus, ToggleLeft, ToggleRight, Lock, Key } from 'lucide-react';
+import { Users as UsersIcon, Plus, Edit, Shield, MapPin, CheckCircle, XCircle, UserPlus, ToggleLeft, ToggleRight, Lock, Key, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const UserManagement: React.FC = () => {
@@ -16,6 +16,9 @@ const UserManagement: React.FC = () => {
     const [confirmPin, setConfirmPin] = useState('');
     const [pendingAction, setPendingAction] = useState<any>(null);
     const [pinLoading, setPinLoading] = useState(false);
+
+    const [deleteTarget, setDeleteTarget] = useState<any>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
     const isSuperAdmin = currentUser.role === 'Super Admin';
@@ -219,6 +222,15 @@ const UserManagement: React.FC = () => {
                                             >
                                                 {user.isActive ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
                                             </button>
+                                            {isSuperAdmin && user.role?.name !== 'Super Admin' && (
+                                                <button
+                                                    className="btn-icon-table delete"
+                                                    onClick={() => setDeleteTarget(user)}
+                                                    title="Eliminar permanentemente"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            )}
                                         </div>
                                     </td>
                                 </tr>
@@ -268,6 +280,53 @@ const UserManagement: React.FC = () => {
                                     </button>
                                 </div>
                             </form>
+                        </div>
+                    </div>
+                )}
+
+                {deleteTarget && (
+                    <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
+                        <div className="product-modal" style={{ maxWidth: '420px' }} onClick={e => e.stopPropagation()}>
+                            <div className="modal-header">
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                    <div style={{ background: 'rgba(239, 68, 68, 0.15)', padding: '12px', borderRadius: '12px', color: '#ef4444' }}>
+                                        <Trash2 size={24} />
+                                    </div>
+                                    <div>
+                                        <h2>Eliminar Usuario</h2>
+                                        <p style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Esta acción no se puede deshacer</p>
+                                    </div>
+                                </div>
+                                <button className="btn-close" onClick={() => setDeleteTarget(null)}><XCircle size={24} /></button>
+                            </div>
+                            <div className="modal-body">
+                                <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '12px', padding: '1rem' }}>
+                                    <p style={{ color: '#fca5a5', fontWeight: 700, margin: 0 }}>
+                                        ¿Eliminar a <strong>{deleteTarget.name}</strong>?
+                                    </p>
+                                    <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: '0.5rem', marginBottom: 0 }}>
+                                        Si el usuario tiene ventas o movimientos asociados, se desactivará en lugar de eliminarse.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="modal-footer">
+                                <button type="button" className="btn-ghost" onClick={() => setDeleteTarget(null)}>Cancelar</button>
+                                <button type="button" className="btn-main" disabled={isDeleting} style={{ background: '#dc2626' }} onClick={async () => {
+                                    try {
+                                        setIsDeleting(true);
+                                        await adminAuthApi.deleteUser(deleteTarget.id);
+                                        toast.success('Usuario eliminado');
+                                        setDeleteTarget(null);
+                                        fetchData();
+                                    } catch (error: any) {
+                                        toast.error(error.response?.data?.message || 'Error al eliminar');
+                                    } finally {
+                                        setIsDeleting(false);
+                                    }
+                                }}>
+                                    <Trash2 size={18} /> {isDeleting ? 'Eliminando...' : 'Eliminar'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}

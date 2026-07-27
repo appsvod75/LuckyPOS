@@ -52,12 +52,15 @@ export const adminAuthApi = {
     getUsers: () => api.get('/auth/users'),
     createUser: (data: any) => api.post('/auth/users', data),
     updateUser: (id: number, data: any) => api.put(`/auth/users/${id}`, data),
+    deleteUser: (id: number) => api.delete(`/auth/users/${id}`),
     verifyPin: (pin: string) => api.post('/auth/verify-pin', { pin })
 };
 
 export const providerApi = {
     getProviders: () => api.get('/providers'),
-    createProvider: (data: any) => api.post('/providers', data)
+    createProvider: (data: any) => api.post('/providers', data),
+    updateProvider: (id: number, data: any) => api.put(`/providers/${id}`, data),
+    deleteProvider: (id: number) => api.delete(`/providers/${id}`)
 };
 
 export const clientApi = {
@@ -94,6 +97,7 @@ export const saleApi = {
     getSalesHistory: (params: any) => api.get('/sales/history', { params }),
     getSaleById: (id: number) => api.get(`/sales/${id}`),
     updateSale: (id: number, data: any) => api.put(`/sales/${id}`, data),
+    deleteSale: (id: number) => api.delete(`/sales/${id}`),
     payAccountReceivable: (id: number, amount: number) => api.post(`/sales/${id}/pay`, { amount }),
     getClientPayments: (id: number) => api.get(`/sales/${id}/payments`)
 };
@@ -104,7 +108,8 @@ export const auditApi = {
 
 export const statsApi = {
     getDashboardStats: (branchId?: number) => api.get('/stats/dashboard', { params: { branchId } }),
-    getReports: (params: { startDate: string; endDate: string; branchId?: number }) => api.get('/stats/reports', { params })
+    getReports: (params: { startDate: string; endDate: string; branchId?: number }) => api.get('/stats/reports', { params }),
+    getProfits: (params: { startDate: string; endDate: string; branchId?: number }) => api.get('/stats/profits', { params })
 };
 
 export const expenseApi = {
@@ -121,6 +126,18 @@ export const projectionApi = {
     getGoals: (branchId: number) => api.get('/projections/goals', { params: { branchId } }),
     getProjection: (branchId: number, monthYear?: string) => api.get('/projections/projection', { params: { branchId, monthYear } }),
     upsertGoal: (data: any) => api.post('/projections/goals', data)
+};
+
+export const backupApi = {
+    createBackup: () => api.post('/backups'),
+    getBackups: () => api.get('/backups'),
+    deleteBackup: (filename: string) => api.delete(`/backups/${filename}`),
+    getDownloadUrl: (filename: string) => `/api/backups/${filename}/download`
+};
+
+export const roleApi = {
+    getRoles: () => api.get('/roles'),
+    updateRole: (id: number, data: { name?: string; permissions: string[] }) => api.put(`/roles/${id}`, data)
 };
 
 export default api;

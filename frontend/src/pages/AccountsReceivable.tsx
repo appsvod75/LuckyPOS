@@ -38,8 +38,8 @@ const AccountsReceivable: React.FC = () => {
     };
 
     const filteredAccounts = accounts.filter(acc =>
-        acc.clientName?.toLowerCase().includes(filter.toLowerCase()) ||
-        acc.documentId?.toLowerCase().includes(filter.toLowerCase())
+        acc.clientName?.toLowerCase()?.includes(filter.toLowerCase()) ||
+        acc.documentId?.toLowerCase()?.includes(filter.toLowerCase())
     );
 
     const handlePayClick = (acc: any) => {

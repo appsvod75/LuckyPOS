@@ -104,8 +104,8 @@ const Products: React.FC = () => {
     };
 
     const filteredProducts = products.filter(p => {
-        const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
-            p.sku?.toLowerCase().includes(search.toLowerCase());
+        const matchesSearch = p.name.toLowerCase()?.includes(search.toLowerCase()) ||
+            p.sku?.toLowerCase()?.includes(search.toLowerCase());
         const matchesNoImage = filterNoImage ? (!p.imageUrl || p.imageUrl.trim() === '') : true;
         return matchesSearch && matchesNoImage;
     });

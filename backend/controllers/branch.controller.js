@@ -1,4 +1,5 @@
 const prisma = require('../db');
+const { getIO } = require('../utils/socket');
 
 const getAllBranches = async (req, res) => {
     try {
@@ -17,6 +18,8 @@ const createBranch = async (req, res) => {
         const branch = await prisma.branch.create({
             data: { name, address, phone }
         });
+        if (getIO()) getIO().emit('BRANCH_CREATED', branch);
+
         res.json(branch);
     } catch (error) {
         res.status(500).json({ message: 'Error al crear sucursal' });
@@ -31,6 +34,8 @@ const updateBranch = async (req, res) => {
             where: { id: parseInt(id) },
             data: { name, address, phone, isActive: !!isActive }
         });
+        if (getIO()) getIO().emit('BRANCH_UPDATED', branch);
+
         res.json(branch);
     } catch (error) {
         res.status(500).json({ message: 'Error al actualizar sucursal' });
@@ -44,6 +49,8 @@ const deleteBranch = async (req, res) => {
             where: { id: parseInt(id) },
             data: { isActive: false }
         });
+        if (getIO()) getIO().emit('BRANCH_DELETED', { id: parseInt(id) });
+
         res.json({ message: 'Sucursal desactivada' });
     } catch (error) {
         res.status(500).json({ message: 'Error al desactivar sucursal' });

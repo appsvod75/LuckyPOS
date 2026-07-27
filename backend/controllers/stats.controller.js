@@ -1,15 +1,12 @@
 const prisma = require('../db');
-const { startOfDay, endOfDay } = require('date-fns');
+const { localDateStr, startOfLocalDay, endOfLocalDay, localDate } = require('../utils/timezone');
 
 const getDashboardStats = async (req, res) => {
     try {
         const { branchId, date } = req.query;
-        // Forzamos el offset El Salvador para que "Hoy" sea el día local.
-        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/El_Salvador' });
-        const targetDateStr = date || todayStr;
-
-        const start = new Date(`${targetDateStr}T00:00:00-06:00`);
-        const end = new Date(`${targetDateStr}T23:59:59-06:00`);
+        const targetDateStr = date || localDateStr();
+        const start = startOfLocalDay(targetDateStr);
+        const end = endOfLocalDay(targetDateStr);
 
         const whereClause = {
             createdAt: {
@@ -18,7 +15,9 @@ const getDashboardStats = async (req, res) => {
             }
         };
 
-        if (branchId) {
+        if (req.user.role === 'Vendedor') {
+            whereClause.branchId = req.user.branch_id;
+        } else if (branchId) {
             whereClause.branchId = parseInt(branchId);
         }
 
@@ -45,11 +44,23 @@ const getDashboardStats = async (req, res) => {
         });
 
         // 2. Low Stock Products (Global)
-        // Note: Field comparison in Prisma count/where
         const lowStockCount = await prisma.inventory.count({
             where: {
                 stockLevel: { lte: prisma.inventory.fields.minStock }
             }
+        });
+
+        const lowStockItems = await prisma.inventory.findMany({
+            where: {
+                stockLevel: { lte: prisma.inventory.fields.minStock },
+                product: { isActive: true, isService: false }
+            },
+            include: {
+                product: { select: { name: true } },
+                branch: { select: { name: true } }
+            },
+            orderBy: { stockLevel: 'asc' },
+            take: 10
         });
 
         // 3. New Clients Today
@@ -74,7 +85,14 @@ const getDashboardStats = async (req, res) => {
             },
             totalExpenses,
             lowStockCount,
-            newClientsCount
+            newClientsCount,
+            lowStockItems: lowStockItems.map(i => ({
+                productId: i.productId,
+                productName: i.product.name,
+                branchName: i.branch.name,
+                stockLevel: i.stockLevel,
+                minStock: i.minStock
+            }))
         });
 
     } catch (error) {
@@ -87,14 +105,8 @@ const getReports = async (req, res) => {
     try {
         const { startDate, endDate, branchId } = req.query;
         
-        // Forzamos el offset El Salvador para los reportes
-        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/El_Salvador' });
-        
-        const startStr = startDate ? `${startDate}T00:00:00-06:00` : `${todayStr}T00:00:00-06:00`;
-        const endStr = endDate ? `${endDate}T23:59:59-06:00` : `${todayStr}T23:59:59-06:00`;
-
-        const start = new Date(startStr);
-        const end = new Date(endStr);
+        const start = startDate ? startOfLocalDay(startDate) : startOfLocalDay();
+        const end = endDate ? endOfLocalDay(endDate) : endOfLocalDay();
         
         const user_role = req.user.role;
         const user_branch_id = req.user.branch_id;
@@ -303,7 +315,101 @@ const getReports = async (req, res) => {
     }
 };
 
+const getProfits = async (req, res) => {
+    try {
+        const { startDate, endDate, branchId } = req.query;
+
+        const start = startDate ? startOfLocalDay(startDate) : startOfLocalDay();
+        start.setDate(start.getDate() - 30);
+        const end = endDate ? endOfLocalDay(endDate) : endOfLocalDay();
+
+        const whereClause = {
+            createdAt: { gte: start, lte: end }
+        };
+        if (req.user.role === 'Vendedor') {
+            whereClause.branchId = req.user.branch_id;
+        } else if (branchId) {
+            whereClause.branchId = parseInt(branchId);
+        }
+
+        const sales = await prisma.saleH.findMany({
+            where: whereClause,
+            include: {
+                details: {
+                    include: { product: { select: { name: true, averageCost: true } } }
+                },
+                branch: { select: { name: true } }
+            },
+            orderBy: { createdAt: 'asc' }
+        });
+
+        let totalRevenue = 0;
+        let totalCost = 0;
+        const productMap = {};
+        const dayMap = {};
+
+        for (const sale of sales) {
+            const day = sale.createdAt.toISOString().split('T')[0];
+            if (!dayMap[day]) dayMap[day] = { revenue: 0, cost: 0, count: 0 };
+
+            for (const detail of sale.details) {
+                const revenue = Number(detail.subtotal);
+                const cost = Number(detail.product?.averageCost || 0) * detail.quantity;
+                const profit = revenue - cost;
+
+                totalRevenue += revenue;
+                totalCost += cost;
+                dayMap[day].revenue += revenue;
+                dayMap[day].cost += cost;
+                dayMap[day].count += 1;
+
+                const pid = detail.productId;
+                if (!productMap[pid]) {
+                    productMap[pid] = {
+                        productId: pid,
+                        name: detail.product?.name || 'Producto eliminado',
+                        quantity: 0,
+                        revenue: 0,
+                        cost: 0
+                    };
+                }
+                productMap[pid].quantity += detail.quantity;
+                productMap[pid].revenue += revenue;
+                productMap[pid].cost += cost;
+            }
+        }
+
+        const totalProfit = totalRevenue - totalCost;
+        const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
+
+        const byProduct = Object.values(productMap)
+            .map(p => ({ ...p, profit: p.revenue - p.cost, margin: p.revenue > 0 ? ((p.revenue - p.cost) / p.revenue) * 100 : 0 }))
+            .sort((a, b) => b.profit - a.profit)
+            .slice(0, 30);
+
+        const byDay = Object.entries(dayMap)
+            .map(([date, data]) => ({ date, ...data, profit: data.revenue - data.cost }))
+            .sort((a, b) => a.date.localeCompare(b.date));
+
+        res.json({
+            summary: {
+                totalRevenue: Math.round(totalRevenue * 100) / 100,
+                totalCost: Math.round(totalCost * 100) / 100,
+                totalProfit: Math.round(totalProfit * 100) / 100,
+                profitMargin: Math.round(profitMargin * 100) / 100,
+                salesCount: sales.length
+            },
+            byProduct,
+            byDay
+        });
+    } catch (error) {
+        console.error('Error in getProfits:', error);
+        res.status(500).json({ message: 'Error al calcular ganancias', details: error.message });
+    }
+};
+
 module.exports = {
     getDashboardStats,
-    getReports
+    getReports,
+    getProfits
 };

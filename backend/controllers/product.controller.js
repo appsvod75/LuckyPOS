@@ -1,6 +1,6 @@
 const prisma = require('../db');
 const { logAudit } = require('../utils/audit');
-const { io } = require('../server');
+const { getIO } = require('../utils/socket');
 
 const getAllCategories = async (req, res) => {
     const { showInactive } = req.query;
@@ -23,6 +23,7 @@ const createCategory = async (req, res) => {
 
         await logAudit(req.user.id, 'CREATE_CATEGORY', { name, id: category.id }, req.user.branch_id);
 
+        if (getIO()) getIO().emit('CATEGORY_CREATED', category);
         res.json(category);
     } catch (error) {
         res.status(500).json({ message: 'Error al crear la categoría' });
@@ -40,6 +41,7 @@ const updateCategory = async (req, res) => {
 
         await logAudit(req.user.id, 'UPDATE_CATEGORY', { name, id: category.id }, req.user.branch_id);
 
+        if (getIO()) getIO().emit('CATEGORY_UPDATED', category);
         res.json(category);
     } catch (error) {
         res.status(500).json({ message: 'Error al actualizar la categoría' });
@@ -56,6 +58,7 @@ const deleteCategory = async (req, res) => {
         });
 
         await logAudit(req.user.id, 'HARD_DELETE_CATEGORY', { id: idInt }, req.user.branch_id);
+        if (getIO()) getIO().emit('CATEGORY_DELETED', { id: idInt });
         res.json({ message: 'Categoría eliminada permanentemente de la base de datos' });
     } catch (error) {
         // P2003 es el código de Prisma para error de restricción de llave foránea (productos existentes)
@@ -67,6 +70,7 @@ const deleteCategory = async (req, res) => {
                 });
 
                 await logAudit(req.user.id, 'DELETE_CATEGORY', { id: idInt }, req.user.branch_id);
+                if (getIO()) getIO().emit('CATEGORY_DELETED', { id: idInt });
                 return res.json({ message: 'La categoría tiene productos asociados y no puede borrarse físicamente. Se ha desactivado correctamente.' });
             } catch (updateError) {
                 console.error('Error al desactivar categoría fallback:', updateError);
@@ -97,7 +101,7 @@ const getAllProducts = async (req, res) => {
     try {
         const products = await prisma.product.findMany({
             where: {
-                isActive: show_inactive === 'true' ? false : true,
+                isActive: show_inactive === 'true' ? undefined : true,
             },
             include: {
                 category: true,
@@ -227,13 +231,13 @@ const createProduct = async (req, res) => {
 
             console.log('--- DEBUG: newProduct Created ---', newProduct.id);
 
-            // Initialize inventory with min/max stock for the current branch
-            if (req.user.branch_id) {
-                console.log('--- DEBUG: Creating Inventory for branch ---', req.user.branch_id);
+            // Initialize inventory for ALL active branches
+            const activeBranches = await tx.branch.findMany({ where: { isActive: true } });
+            for (const branch of activeBranches) {
                 await tx.inventory.create({
                     data: {
                         productId: newProduct.id,
-                        branchId: req.user.branch_id,
+                        branchId: branch.id,
                         stockLevel: 0,
                         minStock: parseInt(minStock) || 5,
                         maxStock: parseInt(maxStock) || 100
@@ -246,7 +250,7 @@ const createProduct = async (req, res) => {
         await logAudit(req.user.id, 'CREATE_PRODUCT', { name, sku: sku && sku.trim() !== "" ? sku.trim().toUpperCase() : null, id: product.id }, req.user.branch_id);
 
         // Notify other clients
-        if (io) io.emit('PRODUCT_CREATED', { productId: product.id, name: product.name });
+        if (getIO()) getIO().emit('PRODUCT_CREATED', { productId: product.id, name: product.name });
 
         res.json(product);
     } catch (error) {
@@ -330,7 +334,7 @@ const updateProduct = async (req, res) => {
         await logAudit(req.user.id, 'UPDATE_PRODUCT', { name, sku: sku && sku.trim() !== "" ? sku.trim().toUpperCase() : null, id: product.id }, req.user.branch_id);
 
         // Notify other clients
-        if (io) io.emit('PRODUCT_UPDATED', { productId: product.id, name: product.name });
+        if (getIO()) getIO().emit('PRODUCT_UPDATED', { productId: product.id, name: product.name });
 
         res.json(product);
     } catch (error) {
@@ -359,6 +363,7 @@ const deleteProduct = async (req, res) => {
         });
 
         await logAudit(req.user.id, 'HARD_DELETE_PRODUCT', { id: idInt }, req.user.branch_id);
+        if (getIO()) getIO().emit('PRODUCT_DELETED', { productId: idInt });
         res.json({ message: 'Producto eliminado permanentemente de la base de datos' });
         
     } catch (error) {
@@ -371,6 +376,7 @@ const deleteProduct = async (req, res) => {
                 });
 
                 await logAudit(req.user.id, 'DELETE_PRODUCT', { name: product.name, id: product.id }, req.user.branch_id);
+                if (getIO()) getIO().emit('PRODUCT_DELETED', { productId: idInt });
                 return res.json({ message: 'El producto tiene movimientos y no puede borrarse físicamente. Se ha desactivado correctamente.' });
             } catch (updateError) {
                 console.error('Error al desactivar fallback:', updateError);
@@ -393,6 +399,7 @@ const restoreProduct = async (req, res) => {
 
         await logAudit(req.user.id, 'RESTORE_PRODUCT', { name: product.name, id: product.id }, req.user.branch_id);
 
+        if (getIO()) getIO().emit('PRODUCT_UPDATED', { productId: product.id, name: product.name });
         res.json({ message: 'Producto reactivado correctamente', product });
     } catch (error) {
         res.status(500).json({ message: 'Error al reactivar producto' });
@@ -416,6 +423,7 @@ const deleteProductPermanent = async (req, res) => {
         });
 
         await logAudit(req.user.id, 'HARD_DELETE_PRODUCT', { id: idInt }, req.user.branch_id);
+        if (getIO()) getIO().emit('PRODUCT_DELETED', { productId: idInt });
         res.json({ message: 'Producto eliminado permanentemente de la base de datos' });
     } catch (error) {
         if (error.code === 'P2003') {

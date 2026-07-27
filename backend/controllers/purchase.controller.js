@@ -1,5 +1,6 @@
 const prisma = require('../db');
-const { io } = require('../server');
+const { getIO } = require('../utils/socket');
+const { localDate } = require('../utils/timezone');
 
 const createPurchase = async (req, res) => {
     const { branch_id, provider_id, invoice_number, payment_type, details, customDate } = req.body;
@@ -18,7 +19,7 @@ const createPurchase = async (req, res) => {
                     unitCost: Number(item.unit_cost),
                     subtotal: subtotal,
                     batchNumber: item.batchNumber || item.batch_number,
-                    expirationDate: item.expirationDate || item.expiration_date ? new Date((item.expirationDate || item.expiration_date) + 'T12:00:00-06:00') : null
+                    expirationDate: item.expirationDate || item.expiration_date ? localDate(item.expirationDate || item.expiration_date, '12') : null
                 };
             });
 
@@ -32,7 +33,7 @@ const createPurchase = async (req, res) => {
                     total: total,
                     paymentType: payment_type,
                     balance: payment_type === 'CREDIT' ? total : 0,
-                    createdAt: customDate ? new Date(customDate + 'T12:00:00-06:00') : undefined,
+                    createdAt: customDate ? localDate(customDate, '12') : undefined,
                     details: {
                         create: purchaseDetails.map(d => ({
                             productId: d.productId,
@@ -120,7 +121,10 @@ const createPurchase = async (req, res) => {
         });
 
         // Notify other clients about inventory change
-        if (io) io.emit('INVENTORY_UPDATED', { branchId: branch_id });
+        if (io) {
+            getIO().emit('INVENTORY_UPDATED', { branchId: branch_id });
+            getIO().emit('PURCHASE_CREATED', { purchaseId: result.id, total: result.total });
+        }
 
         res.json({ message: 'Compra registrada, costos recalculados y stock actualizado', purchase_id: result.id });
     } catch (error) {
@@ -132,7 +136,12 @@ const createPurchase = async (req, res) => {
 
 const getAllPurchases = async (req, res) => {
     try {
+        const whereClause = {};
+        if (req.user.role === 'Vendedor') {
+            whereClause.branchId = req.user.branch_id;
+        }
         const purchases = await prisma.purchaseH.findMany({
+            where: whereClause,
             include: { provider: true, details: { include: { product: true } } },
             orderBy: { createdAt: 'desc' }
         });
@@ -144,8 +153,12 @@ const getAllPurchases = async (req, res) => {
 
 const getAccountsPayable = async (req, res) => {
     try {
+        const whereClause = { balance: { gt: 0 } };
+        if (req.user.role === 'Vendedor') {
+            whereClause.branchId = req.user.branch_id;
+        }
         const purchases = await prisma.purchaseH.findMany({
-            where: { balance: { gt: 0 } },
+            where: whereClause,
             include: { provider: true, branch: true }
         });
         res.json(purchases);
@@ -219,6 +232,7 @@ const payPurchase = async (req, res) => {
             return updatedPurchase;
         });
 
+        if (getIO()) getIO().emit('PURCHASE_UPDATED', { purchaseId: result.id, balance: result.balance });
         res.json({ message: 'Pago registrado y gasto generado con éxito', purchase: result });
     } catch (error) {
         console.error('Error paying purchase:', error);
@@ -240,6 +254,7 @@ const markAsPaid = async (req, res) => {
             data: { balance: 0 }
         });
 
+        if (getIO()) getIO().emit('PURCHASE_UPDATED', { purchaseId: parseInt(id), balance: 0 });
         res.json({ message: 'Factura marcada como pagada sin registrar gasto' });
     } catch (error) {
         console.error('Error marking purchase as paid:', error);

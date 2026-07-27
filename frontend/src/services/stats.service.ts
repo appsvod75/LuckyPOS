@@ -1,7 +1,5 @@
-import axios from 'axios';
-
-const API_URL = '/api/stats';
+import api from './api';
 
 export const statsApi = {
-    getDashboardStats: () => axios.get(`${API_URL}/dashboard`)
+    getDashboardStats: (branchId?: number) => api.get('/stats/dashboard', { params: { branchId } })
 };

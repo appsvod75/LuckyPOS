@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   ShoppingCart, LayoutDashboard, Package, RefreshCw, ClipboardList, LogOut, Layers, History,
   Users, User, Receipt, Archive, Activity, TrendingUp, Wallet, Truck, Settings as SettingsIcon, ShieldCheck, MapPin,
-  BarChart3, LineChart, Eye, Tags, Store, Building2, Banknote
+  BarChart3, LineChart, Eye, Tags, Store, Building2, Banknote, Search
 } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 import { configApi } from '../services/api';
@@ -11,7 +11,7 @@ const Sidebar: React.FC = () => {
   const location = useLocation();
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [sidebarConfig, setSidebarConfig] = useState<any[]>([]);
+  const [sidebarConfig, setSidebarConfig] = useState<any>([]);
   const user = JSON.parse(localStorage.getItem('user') || '{}');
 
   useEffect(() => {
@@ -25,7 +25,7 @@ const Sidebar: React.FC = () => {
           const config = typeof res.data.sidebarConfig === 'string'
             ? JSON.parse(res.data.sidebarConfig)
             : res.data.sidebarConfig;
-          setSidebarConfig(Array.isArray(config) ? config : []);
+          setSidebarConfig(config);
         }
       } catch (error) {
         console.error('Error fetching config', error);
@@ -70,41 +70,72 @@ const Sidebar: React.FC = () => {
     projections: { icon: <LineChart />, label: 'Proyecciones', path: '/projections' },
     transfers: { icon: <Truck />, label: 'Traslados', path: '/transfers' },
     admin: { icon: <LayoutDashboard />, label: 'Dashboard', path: '/admin' },
+    lookup: { icon: <Search />, label: 'Consultar', path: '/lookup' },
   };
 
-  // If we have a custom config, follow it. Otherwise, use a default fallback.
-  let menuItems: any[] = [];
+    const rawPerms = user.permissions;
+    const userPerms: string[] = Array.isArray(rawPerms) ? rawPerms : [];
+    const hasPerm = (key: string) => userPerms.length === 0 || userPerms.includes(key);
 
-  if (sidebarConfig && sidebarConfig.length > 0) {
-    menuItems = sidebarConfig
-      .map(conf => {
+    // Support both old array format and new object format { sidebar: [...], dashboard: [...] }
+    const sidebarItems = Array.isArray(sidebarConfig) ? sidebarConfig : (sidebarConfig?.sidebar || []);
+    const hasConfig = sidebarItems.length > 0;
+
+    let menuItems: any[] = [];
+
+    if (hasConfig) {
+    menuItems = sidebarItems
+      .map((conf: any) => {
         const baseItem = allPossibleItems[conf.key];
-        // Ensure enabled is strictly true (handle potential string "false" if any)
         if (!baseItem || conf.enabled === false || conf.enabled === "false") return null;
         
-        // RBAC: Hide Settings and Personal if not Super Admin (ID 1)
-        if ((conf.key === 'settings' || conf.key === 'users') && user.id !== 1) return null;
-        
-        // RBAC: Hide Audit if not Super Admin (ID 1)
-        if (conf.key === 'audit' && user.id !== 1) return null;
+        if (!hasPerm(conf.key)) return null;
         
         return baseItem;
       })
       .filter(Boolean);
   } else {
-    // Fallback if no config yet
-    menuItems = [
-      allPossibleItems.admin,
-      allPossibleItems.pos,
-      allPossibleItems.summary,
-      allPossibleItems.inventory,
-      allPossibleItems.transfers,
-      allPossibleItems.products,
-      allPossibleItems.clients,
-      allPossibleItems.expenses,
-      allPossibleItems.history,
-      allPossibleItems.projections,
-    ].filter(Boolean);
+    // Fallback: if user has permissions defined, use those; otherwise use role-based defaults
+    if (userPerms.length > 0) {
+      menuItems = Object.entries(allPossibleItems)
+        .filter(([key]) => hasPerm(key))
+        .map(([, item]) => item);
+    } else {
+      const isAdmin = user.role === 'Admin' || user.role === 'Super Admin';
+      const defaultItems = [
+        allPossibleItems.pos,
+        allPossibleItems.summary,
+        allPossibleItems.inventory,
+        allPossibleItems.transfers,
+        allPossibleItems.products,
+        allPossibleItems.categories,
+        allPossibleItems.suppliers,
+        allPossibleItems.clients,
+        allPossibleItems.expenses,
+        allPossibleItems.history,
+        allPossibleItems.projections,
+      ];
+
+      if (isAdmin) {
+        defaultItems.push(
+          allPossibleItems.receivable,
+          allPossibleItems.payable,
+          allPossibleItems.closings,
+          allPossibleItems.reports,
+          allPossibleItems.admin,
+        );
+      }
+
+      if (user.role === 'Super Admin') {
+        defaultItems.push(
+          allPossibleItems.users,
+          allPossibleItems.branches,
+          allPossibleItems.settings,
+        );
+      }
+
+      menuItems = defaultItems.filter(Boolean);
+    }
   }
 
   const branchColor = user.color_hex || '#3b82f6';

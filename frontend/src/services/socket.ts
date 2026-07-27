@@ -1,6 +1,6 @@
 import { io } from 'socket.io-client';
 
-const SOCKET_URL = window.location.origin.replace('5173', '5000').replace('4000', '3015'); // Adjust for dev/prod
+const SOCKET_URL = window.location.origin.replace('5173', '5000').replace('4000', '3015');
 
 export const socket = io(SOCKET_URL, {
     reconnection: true,
@@ -9,9 +9,54 @@ export const socket = io(SOCKET_URL, {
 });
 
 export const socketEvents = {
+    // Auth & Users
+    LOGIN_SUCCESS: 'LOGIN_SUCCESS',
+    USER_CREATED: 'USER_CREATED',
+    USER_UPDATED: 'USER_UPDATED',
+    FORCE_LOGOUT: 'FORCE_LOGOUT',
+    // Products & Categories
     PRODUCT_CREATED: 'PRODUCT_CREATED',
     PRODUCT_UPDATED: 'PRODUCT_UPDATED',
     PRODUCT_DELETED: 'PRODUCT_DELETED',
+    CATEGORY_CREATED: 'CATEGORY_CREATED',
+    CATEGORY_UPDATED: 'CATEGORY_UPDATED',
+    CATEGORY_DELETED: 'CATEGORY_DELETED',
+    // Inventory
     INVENTORY_UPDATED: 'INVENTORY_UPDATED',
-    FORCE_LOGOUT: 'FORCE_LOGOUT'
+    // Sales
+    SALE_CREATED: 'SALE_CREATED',
+    SALE_UPDATED: 'SALE_UPDATED',
+    SALE_DELETED: 'SALE_DELETED',
+    PAYMENT_RECEIVED: 'PAYMENT_RECEIVED',
+    // Purchases
+    PURCHASE_CREATED: 'PURCHASE_CREATED',
+    PURCHASE_UPDATED: 'PURCHASE_UPDATED',
+    // Clients
+    CLIENT_CREATED: 'CLIENT_CREATED',
+    CLIENT_UPDATED: 'CLIENT_UPDATED',
+    // Providers
+    PROVIDER_CREATED: 'PROVIDER_CREATED',
+    PROVIDER_UPDATED: 'PROVIDER_UPDATED',
+    PROVIDER_DELETED: 'PROVIDER_DELETED',
+    // Branches
+    BRANCH_CREATED: 'BRANCH_CREATED',
+    BRANCH_UPDATED: 'BRANCH_UPDATED',
+    BRANCH_DELETED: 'BRANCH_DELETED',
+    // Expenses
+    EXPENSE_CREATED: 'EXPENSE_CREATED',
+    EXPENSE_UPDATED: 'EXPENSE_UPDATED',
+    EXPENSE_DELETED: 'EXPENSE_DELETED',
+    // Closings
+    CLOSING_UPDATED: 'CLOSING_UPDATED',
+    // Config
+    CONFIG_UPDATED: 'CONFIG_UPDATED',
+    // Projections
+    GOAL_UPDATED: 'GOAL_UPDATED',
+    // Danger zone
+    DATA_RESET: 'DATA_RESET',
+    // Backups
+    BACKUP_CREATED: 'BACKUP_CREATED',
+    BACKUP_DELETED: 'BACKUP_DELETED',
+    // Roles
+    ROLE_UPDATED: 'ROLE_UPDATED',
 };

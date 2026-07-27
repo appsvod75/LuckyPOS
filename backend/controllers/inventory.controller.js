@@ -1,5 +1,6 @@
 const prisma = require('../db');
-const { io } = require('../server');
+const { getIO } = require('../utils/socket');
+const { localDateStr, startOfLocalDay, endOfLocalDay, localDate } = require('../utils/timezone');
 
 const getInventoryByBranch = async (req, res) => {
     let { branch_id } = req.params;
@@ -63,8 +64,8 @@ const updateInventory = async (req, res) => {
 
         // Notify other clients about inventory change
         if (io) {
-            io.emit('INVENTORY_UPDATED', { branchId: parseInt(branchId) });
-            io.emit('PRODUCT_UPDATED', { productId: parseInt(productId) }); // For min/max updates
+            getIO().emit('INVENTORY_UPDATED', { branchId: parseInt(branchId) });
+            getIO().emit('PRODUCT_UPDATED', { productId: parseInt(productId) }); // For min/max updates
         }
 
         res.json(updated);
@@ -90,7 +91,7 @@ const createTransfer = async (req, res) => {
                     toBranchId: parseInt(to_branch_id),
                     userId: user_id,
                     status: finalStatus,
-                    createdAt: customDate ? new Date(customDate + 'T12:00:00-06:00') : undefined,
+                    createdAt: customDate ? localDate(customDate, '12') : undefined,
                     details: {
                         create: items.map(item => ({
                             productId: item.product_id,
@@ -153,8 +154,8 @@ const createTransfer = async (req, res) => {
 
         // Notify other clients about inventory change
         if (io) {
-            io.emit('INVENTORY_UPDATED', { branchId: from_branch_id });
-            io.emit('INVENTORY_UPDATED', { branchId: to_branch_id });
+            getIO().emit('INVENTORY_UPDATED', { branchId: from_branch_id });
+            getIO().emit('INVENTORY_UPDATED', { branchId: to_branch_id });
         }
 
         res.json(transfer);
@@ -249,8 +250,8 @@ const confirmTransfer = async (req, res) => {
 
         // Notify both branches (origin and destination) about inventory change
         if (io) {
-            io.emit('INVENTORY_UPDATED', { branchId: result.fromBranchId });
-            io.emit('INVENTORY_UPDATED', { branchId: result.toBranchId });
+            getIO().emit('INVENTORY_UPDATED', { branchId: result.fromBranchId });
+            getIO().emit('INVENTORY_UPDATED', { branchId: result.toBranchId });
         }
 
         res.json(result);
@@ -403,9 +404,8 @@ const getLowStockReport = async (req, res) => {
             inventoryMap.set(`${i.branchId}-${i.productId}`, i);
         });
 
-        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/El_Salvador' });
-        const nowLocal = new Date(`${todayStr}T23:59:59-06:00`);
-        const thirtyDaysAgo = new Date(`${todayStr}T00:00:00-06:00`);
+        const nowLocal = endOfLocalDay();
+        const thirtyDaysAgo = startOfLocalDay();
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
         // 3. Fetch all relevant sales in one query

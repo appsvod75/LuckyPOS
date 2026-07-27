@@ -3,32 +3,18 @@ const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 const http = require('http');
-const { Server } = require('socket.io');
+const { initSocket } = require('./utils/socket');
 const { scheduleClosingJob } = require('./services/cron.service');
 
 const app = express();
 const server = http.createServer(app);
 
-// Configure CORS origins
 const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',')
     : ['http://localhost:4000', 'http://localhost:5173'];
 
-const io = new Server(server, {
-    cors: {
-        origin: (origin, callback) => {
-            // Allow requests with no origin (like mobile apps or curl)
-            if (!origin) return callback(null, true);
-            if (allowedOrigins.indexOf(origin) === -1) {
-                return callback(new Error('The CORS policy for this site does not allow access from the specified Origin.'), false);
-            }
-            return callback(null, true);
-        },
-        methods: ["GET", "POST"]
-    }
-});
+initSocket(server);
 
-// Middleware
 app.use(cors({
     origin: (origin, callback) => {
         if (!origin) return callback(null, true);
@@ -58,15 +44,8 @@ app.use('/api/stats', require('./routes/stats.routes.js'));
 app.use('/api/expenses', require('./routes/expense.routes.js'));
 app.use('/api/closings', require('./routes/closing.routes.js'));
 app.use('/api/projections', require('./routes/projection.routes.js'));
-
-// Socket.io
-io.on('connection', (socket) => {
-    console.log('User connected:', socket.id);
-
-    socket.on('disconnect', () => {
-        console.log('User disconnected:', socket.id);
-    });
-});
+app.use('/api/backups', require('./routes/backup.routes.js'));
+app.use('/api/roles', require('./routes/role.routes.js'));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -83,4 +62,4 @@ server.listen(PORT, '0.0.0.0', async () => {
     await scheduleClosingJob();
 });
 
-module.exports = { io };
+

@@ -1,5 +1,6 @@
 const prisma = require('../db');
-const { startOfDay, endOfDay } = require('date-fns');
+const { getIO } = require('../utils/socket');
+const { localDateStr, startOfLocalDay, endOfLocalDay, localDate } = require('../utils/timezone');
 
 const registerExpense = async (req, res) => {
     try {
@@ -21,10 +22,11 @@ const registerExpense = async (req, res) => {
                 userId,
                 description,
                 amount: parseFloat(amount),
-                createdAt: date ? new Date(`${date}T12:00:00-06:00`) : undefined
+                createdAt: date ? localDate(date, '12') : undefined
             }
         });
 
+        if (getIO()) getIO().emit('EXPENSE_CREATED', expense);
         res.status(201).json({ message: 'Gasto registrado con éxito', expense });
     } catch (error) {
         console.error('Error registering expense:', error);
@@ -41,13 +43,9 @@ const getDailyExpenses = async (req, res) => {
             branchId = req.user.branch_id;
         }
 
-        // --- Lógica de Filtrado por Fecha (Fixed with Offset -06:00) ---
-        // Forzamos el offset para que "Hoy" sea el día local de El Salvador.
-        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/El_Salvador' });
-        const targetDateStr = date || todayStr;
-        
-        const start = new Date(`${targetDateStr}T00:00:00-06:00`);
-        const end = new Date(`${targetDateStr}T23:59:59-06:00`);
+        const targetDateStr = date || localDateStr();
+        const start = startOfLocalDay(targetDateStr);
+        const end = endOfLocalDay(targetDateStr);
 
         const expenses = await prisma.expense.findMany({
             where: {
@@ -90,10 +88,11 @@ const updateExpense = async (req, res) => {
             data: {
                 description: description ?? expense.description,
                 amount: amount !== undefined ? parseFloat(amount) : expense.amount,
-                createdAt: date ? new Date(`${date}T12:00:00-06:00`) : expense.createdAt
+                createdAt: date ? localDate(date, '12') : expense.createdAt
             }
         });
 
+        if (getIO()) getIO().emit('EXPENSE_UPDATED', updated);
         res.json({ message: 'Gasto actualizado con éxito', expense: updated });
     } catch (error) {
         console.error('Error updating expense:', error);
@@ -114,6 +113,7 @@ const deleteExpense = async (req, res) => {
 
         await prisma.expense.delete({ where: { id: parseInt(id) } });
 
+        if (getIO()) getIO().emit('EXPENSE_DELETED', { id: parseInt(id) });
         res.json({ message: 'Gasto eliminado con éxito' });
     } catch (error) {
         console.error('Error deleting expense:', error);

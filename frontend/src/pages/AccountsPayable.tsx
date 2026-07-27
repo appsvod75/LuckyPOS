@@ -238,9 +238,9 @@ const AccountsPayable: React.FC = () => {
     };
 
     const filteredAccounts = accounts.filter(acc =>
-        acc.provider?.name?.toLowerCase().includes(filter.toLowerCase()) ||
-        acc.id.toString().includes(filter) ||
-        acc.invoiceNumber?.toLowerCase().includes(filter.toLowerCase())
+        acc.provider?.name?.toLowerCase()?.includes(filter.toLowerCase()) ||
+        acc.id.toString()?.includes(filter) ||
+        acc.invoiceNumber?.toLowerCase()?.includes(filter.toLowerCase())
     );
 
     return (

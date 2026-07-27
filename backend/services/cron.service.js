@@ -1,18 +1,17 @@
 const cron = require('node-cron');
 const prisma = require('../db');
-const { startOfDay, endOfDay, subDays } = require('date-fns');
+const { localDateStr, startOfLocalDay, endOfLocalDay, localDate } = require('../utils/timezone');
 
 // Store the currently active task so we can cancel and restart it if the time changes
 let activeTask = null;
 
 const runClosingForDate = async (targetDate) => {
     try {
-        // Obtenemos la fecha en formato YYYY-MM-DD según el timezone de El Salvador
-        const dateStr = targetDate.toLocaleDateString('en-CA', { timeZone: 'America/El_Salvador' });
+        const dateStr = localDateStr(targetDate);
         console.log(`Iniciando cierre de caja para el día local: ${dateStr}`);
         
-        const start = new Date(`${dateStr}T00:00:00-06:00`);
-        const end = new Date(`${dateStr}T23:59:59-06:00`);
+        const start = startOfLocalDay(dateStr);
+        const end = endOfLocalDay(dateStr);
 
         const branches = await prisma.branch.findMany({ where: { isActive: true } });
 
@@ -92,9 +91,9 @@ const scheduleClosingJob = async () => {
             console.log('--- EJECUTANDO CIERRE AUTOMÁTICO Y DESCONEXIÓN GLOBAL ---');
             
             // Emitir desconexión forzada a todos los usuarios via Socket.io
-            const { io } = require('../server');
+            const { getIO } = require('../utils/socket');
             if (io) {
-                io.emit('FORCE_LOGOUT', { message: 'Cierre de sistema programado ejecutado.' });
+                getIO().emit('FORCE_LOGOUT', { message: 'Cierre de sistema programado ejecutado.' });
                 console.log('Evento FORCE_LOGOUT emitido a todos los clientes.');
             }
 

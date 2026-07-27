@@ -1,11 +1,16 @@
 const prisma = require('../db');
-const { startOfMonth, endOfMonth, format, differenceInDays, isSameMonth } = require('date-fns');
+const { format } = require('date-fns');
+const { getIO } = require('../utils/socket');
+const { localDateStr, startOfLocalDay, endOfLocalDay, localDate, nowLocal } = require('../utils/timezone');
 
 const getProjections = async (req, res) => {
     try {
-        const { branchId, monthYear } = req.query; 
+        let { branchId, monthYear } = req.query; 
         const month = monthYear || format(new Date(), 'yyyy-MM');
         
+        if (req.user.role === 'Vendedor') {
+            branchId = String(req.user.branch_id);
+        }
         if (!branchId) return res.status(400).json({ message: 'branchId es requerido' });
 
         const goal = await prisma.salesGoal.findUnique({
@@ -19,12 +24,10 @@ const getProjections = async (req, res) => {
 
         if (!goal) return res.json(null);
 
-        const start = new Date(month + '-01T00:00:00-06:00');
-        const end = new Date(new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59).toISOString().split('T')[0] + 'T23:59:59-06:00');
+        const start = startOfLocalDay(month + '-01');
+        const end = endOfLocalDay(getLastDayStr(month));
         
-        // Forzamos el día local para calcular días transcurridos
-        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/El_Salvador' });
-        const nowLocal = new Date(`${todayStr}T12:00:00-06:00`);
+        const todayLocal = nowLocal();
         
         // Detailed sales by day for the chart
         const salesData = await prisma.saleH.findMany({
@@ -50,8 +53,8 @@ const getProjections = async (req, res) => {
         const currentSales = Number(salesData.reduce((acc, curr) => acc + Number(curr.total), 0));
         
         let elapsedDays = 0;
-        if (nowLocal.getFullYear() === start.getFullYear() && nowLocal.getMonth() === start.getMonth()) {
-            elapsedDays = nowLocal.getDate();
+        if (todayLocal.getFullYear() === start.getFullYear() && todayLocal.getMonth() === start.getMonth()) {
+            elapsedDays = todayLocal.getDate();
         } else {
             elapsedDays = numDays;
         }
@@ -80,7 +83,10 @@ const getProjections = async (req, res) => {
 
 const getGoals = async (req, res) => {
     try {
-        const { branchId } = req.query;
+        let { branchId } = req.query;
+        if (req.user.role === 'Vendedor') {
+            branchId = String(req.user.branch_id);
+        }
         const goals = await prisma.salesGoal.findMany({
             where: { branchId: parseInt(branchId) },
             orderBy: { monthYear: 'desc' }
@@ -88,8 +94,8 @@ const getGoals = async (req, res) => {
         
         // Add current_sales for each goal for the history view
         const enrichedGoals = await Promise.all(goals.map(async (goal) => {
-            const start = new Date(goal.monthYear + '-01T00:00:00-06:00');
-            const end = new Date(new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59).toISOString().split('T')[0] + 'T23:59:59-06:00');
+            const start = startOfLocalDay(goal.monthYear + '-01');
+            const end = endOfLocalDay(getLastDayStr(goal.monthYear));
             const sales = await prisma.saleH.aggregate({
                 where: {
                     branchId: goal.branchId,
@@ -133,6 +139,7 @@ const saveGoal = async (req, res) => {
             }
         });
 
+        if (getIO()) getIO().emit('GOAL_UPDATED', goal);
         res.json(goal);
     } catch (error) {
         console.error(error);
@@ -142,6 +149,12 @@ const saveGoal = async (req, res) => {
 
 function getDaysInMonth(date) {
     return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+}
+
+function getLastDayStr(monthYear) {
+    const [y, m] = monthYear.split('-');
+    const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
+    return `${monthYear}-${String(lastDay).padStart(2, '0')}`;
 }
 
 module.exports = { getProjections, getGoals, saveGoal };

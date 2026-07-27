@@ -38,7 +38,7 @@ async function main() {
         create: {
             id: 1,
             name: 'Super Admin',
-            permissions: JSON.stringify({ all: true })
+            permissions: JSON.stringify(["pos","summary","inventory","transfers","products","categories","suppliers","clients","receivable","payable","expenses","history","closings","reports","projections","admin","users","branches","settings"])
         }
     });
 
@@ -48,7 +48,7 @@ async function main() {
         create: {
             id: 2,
             name: 'Admin',
-            permissions: JSON.stringify({ all: true, config: false })
+            permissions: JSON.stringify(["pos","summary","inventory","transfers","products","categories","suppliers","clients","receivable","payable","expenses","history","closings","reports","projections","admin","users","branches"])
         }
     });
 
@@ -58,7 +58,7 @@ async function main() {
         create: {
             id: 3,
             name: 'Vendedor',
-            permissions: JSON.stringify({ pos: true })
+            permissions: JSON.stringify(["pos","summary","inventory","transfer","products","clients","expenses","history"])
         }
     });
 

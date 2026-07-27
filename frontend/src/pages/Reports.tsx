@@ -1,15 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from '../components/Sidebar';
 import { statsApi, branchApi } from '../services/api';
+import { exportCsv } from '../utils/exportCsv';
 import { 
     BarChart3, Calendar, Users, Package, TrendingUp, TrendingDown, 
-    Filter, ArrowLeft, Award, Wallet, Building2, PieChart, ChevronRight
+    Filter, ArrowLeft, Award, Wallet, Building2, PieChart, ChevronRight, RefreshCcw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import toast from 'react-hot-toast';
 
-type ReportModule = 'hub' | 'clients' | 'products' | 'financial' | 'branches' | 'users';
+type ReportModule = 'hub' | 'clients' | 'products' | 'financial' | 'branches' | 'users' | 'profits';
 
 const Reports: React.FC = () => {
     const [activeModule, setActiveModule] = useState<ReportModule>('hub');
@@ -43,17 +44,95 @@ const Reports: React.FC = () => {
     const fetchReports = async () => {
         setLoading(true);
         try {
-            const res = await statsApi.getReports({
-                startDate: dateRange.start,
-                endDate: dateRange.end,
-                branchId
-            });
-            setData(res.data);
+            if (activeModule === 'profits') {
+                const res = await statsApi.getProfits({
+                    startDate: dateRange.start,
+                    endDate: dateRange.end,
+                    branchId
+                });
+                setData(res.data);
+            } else {
+                const res = await statsApi.getReports({
+                    startDate: dateRange.start,
+                    endDate: dateRange.end,
+                    branchId
+                });
+                setData(res.data);
+            }
         } catch (error) {
             toast.error('Error al generar reportes');
             console.error(error);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleExport = () => {
+        if (!data) return;
+        switch (activeModule) {
+            case 'clients': {
+                const rows = data.topClients?.map((c: any) => ({
+                    Cliente: c.name,
+                    Consumo: c.consumption,
+                    Visitas: c.visits,
+                    Deuda: c.totalCurrentDebt
+                })) || [];
+                exportCsv(rows, `clientes_${dateRange.start}_${dateRange.end}`);
+                break;
+            }
+            case 'products': {
+                const rows = data.topProducts?.map((p: any) => ({
+                    Producto: p.name,
+                    Cantidad: p.quantity,
+                    Ingreso: p.revenue
+                })) || [];
+                exportCsv(rows, `productos_${dateRange.start}_${dateRange.end}`);
+                break;
+            }
+            case 'financial': {
+                const rows = [
+                    { Indicador: 'Ingresos Totales', Valor: data.summary?.totalSales || 0 },
+                    { Indicador: 'Gastos Totales', Valor: data.summary?.totalExpenses || 0 },
+                    { Indicador: 'Neto', Valor: data.summary?.netAmount || 0 },
+                    { Indicador: 'Ventas Realizadas', Valor: data.summary?.salesCount || 0 },
+                ];
+                const methods = data.paymentMethods ? Object.entries(data.paymentMethods).map(([k, v]) => ({
+                    Indicador: `Pago: ${k}`,
+                    Valor: v
+                })) : [];
+                exportCsv([...rows, ...methods], `financiero_${dateRange.start}_${dateRange.end}`);
+                break;
+            }
+            case 'users': {
+                const rows = data.salesByUser?.map((u: any) => ({
+                    Vendedor: u.name,
+                    Ventas: u.count,
+                    Total: u.total
+                })) || [];
+                exportCsv(rows, `vendedores_${dateRange.start}_${dateRange.end}`);
+                break;
+            }
+            case 'branches': {
+                const rows = data.branchPerformance?.map((b: any) => ({
+                    Sucursal: b.name,
+                    Ventas: b.count,
+                    Total: b.total
+                })) || [];
+                exportCsv(rows, `sucursales_${dateRange.start}_${dateRange.end}`);
+                break;
+            }
+            case 'profits': {
+                const rows = data.byProduct?.map((p: any) => ({
+                    Producto: p.name,
+                    Cantidad: p.quantity,
+                    Ingreso: p.revenue,
+                    Costo: p.cost,
+                    Ganancia: p.profit,
+                    Margen: p.margin?.toFixed(1) + '%'
+                })) || [];
+                exportCsv(rows, `rentabilidad_${dateRange.start}_${dateRange.end}`);
+                break;
+            }
         }
     };
 
@@ -73,6 +152,7 @@ const Reports: React.FC = () => {
         { id: 'users', title: 'Ventas por Vendedor', desc: 'Rendimiento por personal', icon: <Award size={24} />, color: '#ef4444' },
         { id: 'financial', title: 'Balance Financiero', desc: 'Ventas vs Gastos y Utilidad', icon: <TrendingUp size={24} />, color: '#10b981' },
         { id: 'branches', title: 'Rendimiento Sucursales', desc: 'Comparativa de ventas por local', icon: <Building2 size={24} />, color: '#8b5cf6' },
+        { id: 'profits', title: 'Rentabilidad', desc: 'Ganancias, costos y márgenes por producto', icon: <Wallet size={24} />, color: '#f59e0b' },
     ];
 
     return (
@@ -100,24 +180,35 @@ const Reports: React.FC = () => {
                         </div>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                        <div style={{ display: 'flex', background: '#0f172a', padding: '0.4rem', borderRadius: '12px', border: '1px solid #334155', gap: '0.4rem' }}>
-                            <input 
-                                type="date" 
-                                value={dateRange.start} 
-                                onChange={e => setDateRange({ ...dateRange, start: e.target.value })}
-                                style={{ fontSize: '0.8rem', color: '#e2e8f0', background: '#1e293b', border: 'none', padding: '0.4rem 0.6rem', borderRadius: '8px' }}
-                            />
-                            <span style={{ color: '#64748b', alignSelf: 'center', fontSize: '0.8rem' }}>a</span>
-                            <input 
-                                type="date" 
-                                value={dateRange.end} 
-                                onChange={e => setDateRange({ ...dateRange, end: e.target.value })}
-                                style={{ fontSize: '0.8rem', color: '#e2e8f0', background: '#1e293b', border: 'none', padding: '0.4rem 0.6rem', borderRadius: '8px' }}
-                            />
-                        </div>
+                        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', background: '#0f172a', padding: '0.4rem', borderRadius: '12px', border: '1px solid #334155', gap: '0.4rem' }}>
+                                <input 
+                                    type="date" 
+                                    value={dateRange.start} 
+                                    onChange={e => setDateRange({ ...dateRange, start: e.target.value })}
+                                    style={{ fontSize: '0.8rem', color: '#e2e8f0', background: '#1e293b', border: 'none', padding: '0.4rem 0.6rem', borderRadius: '8px' }}
+                                />
+                                <span style={{ color: '#64748b', alignSelf: 'center', fontSize: '0.8rem' }}>a</span>
+                                <input 
+                                    type="date" 
+                                    value={dateRange.end} 
+                                    onChange={e => setDateRange({ ...dateRange, end: e.target.value })}
+                                    style={{ fontSize: '0.8rem', color: '#e2e8f0', background: '#1e293b', border: 'none', padding: '0.4rem 0.6rem', borderRadius: '8px' }}
+                                />
+                                <select
+                                    value={branchId || ''}
+                                    onChange={e => setBranchId(e.target.value ? Number(e.target.value) : undefined)}
+                                    style={{ fontSize: '0.8rem', color: '#e2e8f0', background: '#1e293b', border: 'none', padding: '0.4rem 0.6rem', borderRadius: '8px', cursor: 'pointer' }}
+                                >
+                                    <option value="">Todas las sucursales</option>
+                                    {branches.map(b => (
+                                        <option key={b.id} value={b.id}>{b.name}</option>
+                                    ))}
+                                </select>
+                            </div>
 
                         {activeModule !== 'hub' && (
+                            <>
                             <button 
                                 onClick={fetchReports} 
                                 disabled={loading}
@@ -126,6 +217,16 @@ const Reports: React.FC = () => {
                             >
                                 <Filter size={14} /> {loading ? 'Cargando...' : 'Filtrar'}
                             </button>
+                            {data && (
+                                <button
+                                    onClick={() => handleExport()}
+                                    className="btn-primary"
+                                    style={{ padding: '0 1.25rem', height: '38px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', background: '#10b981' }}
+                                >
+                                    <RefreshCcw size={14} /> Exportar CSV
+                                </button>
+                            )}
+                            </>
                         )}
                     </div>
                 </header>
@@ -202,6 +303,7 @@ const Reports: React.FC = () => {
                                         {activeModule === 'users' && <UserReport data={data} formatCurrency={formatCurrency} />}
                                         {activeModule === 'financial' && <FinancialReport data={data} formatCurrency={formatCurrency} />}
                                         {activeModule === 'branches' && <BranchReport data={data} formatCurrency={formatCurrency} />}
+                                        {activeModule === 'profits' && <ProfitsReport data={data} formatCurrency={formatCurrency} />}
                                     </>
                                 )}
                             </motion.div>
@@ -524,5 +626,77 @@ const SummaryCard: React.FC<{ title: string; value: string; subtitle: string; ic
         </div>
     </motion.div>
 );
+
+const ProfitsReport: React.FC<{ data: any, formatCurrency: any }> = ({ data, formatCurrency }) => {
+    if (!data) return (
+        <div className="info-message" style={{ padding: '4rem', textAlign: 'center', color: '#64748b' }}>
+            <Wallet size={48} style={{ marginBottom: '1rem', opacity: 0.3 }} />
+            <p style={{ fontSize: '1.1rem', fontWeight: 600 }}>Selecciona un período y sucursal para ver el reporte de ganancias</p>
+        </div>
+    );
+
+    const { summary, byProduct, byDay } = data;
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                <SummaryCard title="Ingresos" value={formatCurrency(summary.totalRevenue)} subtitle="Total vendido" color="#10b981" icon={<TrendingUp size={24} />} />
+                <SummaryCard title="Costos" value={formatCurrency(summary.totalCost)} subtitle="Costo promedio de productos" color="#ef4444" icon={<TrendingDown size={24} />} />
+                <SummaryCard title="Ganancia Neta" value={formatCurrency(summary.totalProfit)} subtitle={summary.salesCount + ' ventas en el período'} color="#3b82f6" icon={<Wallet size={24} />} />
+                <SummaryCard title="Margen" value={summary.profitMargin + '%'} subtitle="Margen de ganancia sobre ventas" color="#f59e0b" icon={<PieChart size={24} />} />
+            </div>
+
+            <div style={{ background: '#0f172a', borderRadius: '16px', border: '1px solid #1e293b', overflow: 'hidden' }}>
+                <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'white', margin: 0 }}>Rentabilidad por Producto</h3>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                            <tr>
+                                <th style={thStyle}>Producto</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>Cantidad</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>Ingreso</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>Costo</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>Ganancia</th>
+                                <th style={{ ...thStyle, textAlign: 'right' }}>Margen</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {byProduct.map((p: any) => (
+                                <tr key={p.productId} style={{ borderBottom: '1px solid #1e293b' }}>
+                                    <td style={tdStyle}>{p.name}</td>
+                                    <td style={{ ...tdStyle, textAlign: 'right' }}>{p.quantity}</td>
+                                    <td style={{ ...tdStyle, textAlign: 'right', color: '#10b981' }}>{formatCurrency(p.revenue)}</td>
+                                    <td style={{ ...tdStyle, textAlign: 'right', color: '#ef4444' }}>{formatCurrency(p.cost)}</td>
+                                    <td style={{ ...tdStyle, textAlign: 'right', color: p.profit >= 0 ? '#3b82f6' : '#ef4444', fontWeight: 700 }}>{formatCurrency(p.profit)}</td>
+                                    <td style={{ ...tdStyle, textAlign: 'right', color: p.margin >= 0 ? '#10b981' : '#ef4444', fontWeight: 700 }}>{p.margin.toFixed(1)}%</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const thStyle: React.CSSProperties = {
+    padding: '0.75rem 1rem',
+    fontSize: '0.7rem',
+    fontWeight: 800,
+    color: '#64748b',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+    textAlign: 'left',
+    background: 'rgba(15, 23, 42, 0.5)',
+    borderBottom: '1px solid #1e293b'
+};
+
+const tdStyle: React.CSSProperties = {
+    padding: '0.75rem 1rem',
+    fontSize: '0.85rem',
+    color: '#e2e8f0'
+};
 
 export default Reports;

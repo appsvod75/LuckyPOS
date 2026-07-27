@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import Sidebar from '../components/Sidebar';
-import { configApi } from '../services/api';
+import { configApi, backupApi } from '../services/api';
+import RoleManagement from './RoleManagement';
 import { 
   Settings as SettingsIcon, Save, Building, MapPin, Phone, Globe, Image as ImageIcon, Key, 
   StickyNote, Clock, List, ArrowUp, ArrowDown, GripVertical, TriangleAlert, ShieldAlert, 
   Trash2, RefreshCcw, X, CreditCard, ChevronRight, CheckCircle2, AlertCircle, ShoppingCart, 
-  Eye, EyeOff 
+  Eye, EyeOff, ShieldCheck, Lock as LockIcon, LayoutDashboard
 } from 'lucide-react';
 import { motion, Reorder, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
@@ -140,6 +141,13 @@ const PinModal: React.FC<{ isOpen: boolean; onClose: () => void; onConfirm: (pin
     );
 };
 
+const DASHBOARD_MODULES = [
+    'Punto de Venta','Inventario','Reposición de Stock','Productos','Categorías',
+    'Proveedores','Clientes','Cuentas por Cobrar','Cuentas por Pagar',
+    'Personal','Sucursales','Gastos','Historial','Resumen Día','Cortes Caja',
+    'Configuración','Reportes','Proyecciones','Traslados','Consultar'
+];
+
 const Settings: React.FC = () => {
     const [activeTab, setActiveTab] = useState('business');
     const [showApiKey, setShowApiKey] = useState(false);
@@ -157,14 +165,23 @@ const Settings: React.FC = () => {
         enableEmailTickets: false,
         enableQrCode: false,
         ticketWidth: '58mm',
-        sidebarConfig: [] as { key: string; label: string; enabled: boolean }[]
+        sidebarConfig: [] as { key: string; label: string; enabled: boolean }[],
+        adminPin: '',
     });
     const [loading, setLoading] = useState(false);
     const [dangerModal, setDangerModal] = useState<{ isOpen: boolean; type: 'sales' | 'inventory' | 'products' | null }>({ isOpen: false, type: null });
+    const [backups, setBackups] = useState<any[]>([]);
+    const [isBackingUp, setIsBackingUp] = useState(false);
 
     useEffect(() => {
         fetchConfig();
     }, []);
+
+    useEffect(() => {
+        if (activeTab === 'backup') {
+            backupApi.getBackups().then(res => setBackups(res.data)).catch(() => {});
+        }
+    }, [activeTab]);
 
     const fetchConfig = async () => {
         try {
@@ -184,26 +201,50 @@ const Settings: React.FC = () => {
                     enableEmailTickets: res.data.enableEmailTickets || false,
                     enableQrCode: res.data.enableQrCode || false,
                     ticketWidth: res.data.ticketWidth || '58mm',
-                    sidebarConfig: res.data.sidebarConfig || [
-                        { key: 'pos', label: 'Ventas (POS)', enabled: true },
-                        { key: 'summary', label: 'Resumen Día', enabled: true },
-                        { key: 'inventory', label: 'Inventario', enabled: true },
-                        { key: 'replenishment', label: 'Reposición', enabled: true },
-                        { key: 'products', label: 'Productos', enabled: true },
-                        { key: 'categories', label: 'Categorías', enabled: false },
-                        { key: 'suppliers', label: 'Proveedores', enabled: false },
-                        { key: 'clients', label: 'Clientes', enabled: true },
-                        { key: 'receivable', label: 'CxC', enabled: false },
-                        { key: 'payable', label: 'CxP', enabled: false },
-                        { key: 'expenses', label: 'Gastos', enabled: true },
-                        { key: 'history', label: 'Hist. Ventas', enabled: true },
-                        { key: 'closings', label: 'Cortes Caja', enabled: false },
-                        { key: 'users', label: 'Personal', enabled: false },
-                        { key: 'branches', label: 'Sucursales', enabled: false },
-                        { key: 'reports', label: 'Reportes', enabled: false },
-                        { key: 'admin', label: 'Dashboard', enabled: true },
-                        { key: 'settings', label: 'Configuración', enabled: false }
-                    ]
+                    adminPin: res.data.adminPin || '',
+                    sidebarConfig: (() => {
+                        const ALL_SIDEBAR_KEYS = [
+                            { key: 'pos', label: 'Ventas (POS)', enabled: true },
+                            { key: 'summary', label: 'Resumen Día', enabled: true },
+                            { key: 'inventory', label: 'Inventario', enabled: true },
+                            { key: 'replenishment', label: 'Reposición', enabled: true },
+                            { key: 'products', label: 'Productos', enabled: true },
+                            { key: 'categories', label: 'Categorías', enabled: false },
+                            { key: 'suppliers', label: 'Proveedores', enabled: false },
+                            { key: 'clients', label: 'Clientes', enabled: true },
+                            { key: 'receivable', label: 'CxC', enabled: false },
+                            { key: 'payable', label: 'CxP', enabled: false },
+                            { key: 'expenses', label: 'Gastos', enabled: true },
+                            { key: 'history', label: 'Hist. Ventas', enabled: true },
+                            { key: 'closings', label: 'Cortes Caja', enabled: false },
+                            { key: 'users', label: 'Personal', enabled: false },
+                            { key: 'branches', label: 'Sucursales', enabled: false },
+                            { key: 'reports', label: 'Reportes', enabled: false },
+                            { key: 'lookup', label: 'Consultar', enabled: true },
+                            { key: 'admin', label: 'Dashboard', enabled: true },
+                            { key: 'settings', label: 'Configuración', enabled: false }
+                        ];
+                        const sc = res.data.sidebarConfig;
+                        let saved: any[] = [];
+                        if (sc && typeof sc === 'object' && !Array.isArray(sc)) {
+                            saved = sc.sidebar || [];
+                        } else if (Array.isArray(sc)) {
+                            saved = sc;
+                        }
+                        if (saved.length === 0) return ALL_SIDEBAR_KEYS;
+                        // Merge: keep saved order/state, add missing new items at the end
+                        const savedKeys = new Set(saved.map((s: any) => s.key));
+                        const newItems = ALL_SIDEBAR_KEYS.filter(k => !savedKeys.has(k.key));
+                        return [...saved, ...newItems];
+                    })(),
+                    dashOrder: (() => {
+                        const sc = res.data.sidebarConfig;
+                        if (sc && typeof sc === 'object' && !Array.isArray(sc) && sc.dashboard && sc.dashboard.length > 0) {
+                            const saved = sc.dashboard;
+                            return [...saved, ...DASHBOARD_MODULES.filter(m => !saved.includes(m))];
+                        }
+                        return [...DASHBOARD_MODULES];
+                    })()
                 });
             }
         } catch (error) {
@@ -215,7 +256,15 @@ const Settings: React.FC = () => {
         e.preventDefault();
         setLoading(true);
         try {
-            await configApi.updateConfig(config);
+            const saveData = {
+                ...config,
+                sidebarConfig: {
+                    sidebar: config.sidebarConfig,
+                    dashboard: config.dashOrder
+                }
+            };
+            delete saveData.dashOrder;
+            await configApi.updateConfig(saveData);
             toast.success('Configuración guardada correctamente');
             window.dispatchEvent(new Event('config-updated'));
         } catch (error) {
@@ -230,6 +279,9 @@ const Settings: React.FC = () => {
         { id: 'printing', label: 'IA e Impresión', icon: <StickyNote size={18} /> },
         { id: 'automation', label: 'Automatización', icon: <Clock size={18} /> },
         { id: 'sidebar', label: 'Barra Lateral', icon: <List size={18} /> },
+        { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
+        { id: 'roles', label: 'Roles', icon: <ShieldCheck size={18} /> },
+        { id: 'backup', label: 'Backups', icon: <RefreshCcw size={18} /> },
         { id: 'danger', label: 'Zona de Peligro', icon: <TriangleAlert size={18} color="#ef4444" /> }
     ];
 
@@ -391,6 +443,25 @@ const Settings: React.FC = () => {
                                             </div>
                                         )}
                                     </div>
+                                </div>
+
+                                <div className="field" style={{ gridColumn: 'span 2', marginTop: '1rem', borderTop: '1px solid #334155', paddingTop: '1.5rem' }}>
+                                    <h4 style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1rem', color: '#f59e0b', fontSize: '1rem' }}>
+                                        <LockIcon size={18} /> PIN de Administrador (Zona de Peligro)
+                                    </h4>
+                                    <label style={{ display: 'block', color: '#94a3b8', marginBottom: '0.5rem', fontSize: '0.875rem' }}>PIN de Super Admin (6 dígitos)</label>
+                                    <input
+                                        type="password"
+                                        maxLength={6}
+                                        value={config.adminPin}
+                                        onChange={e => setConfig({ ...config, adminPin: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                                        placeholder="020518"
+                                        style={{ width: '100%', maxWidth: '200px', padding: '0.75rem 1rem', borderRadius: '12px', background: '#0f172a', border: '1px solid #f59e0b', color: 'white', textAlign: 'center', letterSpacing: '0.5em', fontSize: '1.2rem' }}
+                                    />
+                                    <p style={{ color: '#64748b', fontSize: '0.75rem', marginTop: '0.5rem' }}>
+                                        Este PIN se usa para las acciones destructivas (reset de ventas, inventario, productos).
+                                        Si se deja vacío, se usará el configurado en el archivo .env del servidor.
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -567,6 +638,52 @@ const Settings: React.FC = () => {
                         </div>
                     )}
 
+                    {activeTab === 'roles' && (
+                        <div className="settings-section animate-in fade-in slide-in-from-bottom-2" style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '2.5rem', borderRadius: '24px', border: '1px solid #334155' }}>
+                            <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '2rem', fontSize: '1.4rem', color: 'white' }}>
+                                <ShieldCheck size={24} color="#f59e0b" /> Gestión de Roles y Permisos
+                            </h3>
+                            <p style={{ color: '#94a3b8', marginBottom: '2rem' }}>
+                                Selecciona un rol para editar sus permisos. Cada permiso habilita o deshabilita un módulo en el sistema.
+                            </p>
+                            <RoleManagement />
+                        </div>
+                    )}
+
+                    {activeTab === 'dashboard' && (
+                        <div className="settings-section animate-in fade-in slide-in-from-bottom-2" style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '2rem', borderRadius: '24px', border: '1px solid #334155' }}>
+                            <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1rem', fontSize: '1.4rem', color: 'white' }}>
+                                <LayoutDashboard size={24} color="#10b981" /> Orden del Dashboard Principal
+                            </h3>
+                            <p style={{ color: '#94a3b8', fontSize: '1rem', marginBottom: '1.5rem' }}>
+                                Arrastra los módulos para reordenar el panel principal del dashboard. Los cambios se guardan automáticamente.
+                            </p>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxWidth: '600px', margin: '0 auto' }}>
+                                {config.dashOrder.map((title: string, idx: number) => (
+                                    <div key={title} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#0f172a', padding: '0.6rem 1rem', borderRadius: '12px', border: '1px solid #1e293b', borderLeft: '4px solid #10b981' }}>
+                                        <span style={{ fontWeight: 600, fontSize: '0.95rem', color: 'white' }}>{title}</span>
+                                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                            <button type="button" disabled={idx === 0} onClick={() => {
+                                                const newOrder = [...config.dashOrder];
+                                                [newOrder[idx - 1], newOrder[idx]] = [newOrder[idx], newOrder[idx - 1]];
+                                                setConfig({ ...config, dashOrder: newOrder });
+                                            }} style={{ padding: '6px', borderRadius: '8px', cursor: idx === 0 ? 'default' : 'pointer', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', color: idx === 0 ? '#1e293b' : '#94a3b8' }}>
+                                                <ArrowUp size={18} />
+                                            </button>
+                                            <button type="button" disabled={idx === config.dashOrder.length - 1} onClick={() => {
+                                                const newOrder = [...config.dashOrder];
+                                                [newOrder[idx], newOrder[idx + 1]] = [newOrder[idx + 1], newOrder[idx]];
+                                                setConfig({ ...config, dashOrder: newOrder });
+                                            }} style={{ padding: '6px', borderRadius: '8px', cursor: idx === config.dashOrder.length - 1 ? 'default' : 'pointer', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)', color: idx === config.dashOrder.length - 1 ? '#1e293b' : '#94a3b8' }}>
+                                                <ArrowDown size={18} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {activeTab === 'sidebar' && (
                         <div className="settings-section animate-in fade-in slide-in-from-bottom-2" style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '1.5rem 2rem', borderRadius: '24px', border: '1px solid #334155' }}>
                             <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1rem', fontSize: '1.4rem', color: 'white' }}>
@@ -662,6 +779,95 @@ const Settings: React.FC = () => {
                                     ))}
                                 </AnimatePresence>
                             </Reorder.Group>
+                        </div>
+                    )}
+
+                    {activeTab === 'backup' && (
+                        <div className="settings-section animate-in fade-in slide-in-from-bottom-2" style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '2.5rem', borderRadius: '24px', border: '1px solid #334155' }}>
+                            <h3 style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '1.5rem', fontSize: '1.4rem', color: 'white' }}>
+                                <RefreshCcw size={24} color="#3b82f6" /> Backups de Base de Datos
+                            </h3>
+                            <p style={{ color: '#94a3b8', marginBottom: '2rem' }}>
+                                Los backups se crean con mysqldump y se almacenan en el servidor.
+                                Puedes descargarlos o eliminarlos desde aquí.
+                            </p>
+
+                            <button
+                                onClick={async () => {
+                                    try {
+                                        setIsBackingUp(true);
+                                        await backupApi.createBackup();
+                                        toast.success('Backup creado exitosamente');
+                                        const res = await backupApi.getBackups();
+                                        setBackups(res.data);
+                                    } catch (error: any) {
+                                        toast.error(error.response?.data?.message || 'Error al crear backup');
+                                    } finally {
+                                        setIsBackingUp(false);
+                                    }
+                                }}
+                                disabled={isBackingUp}
+                                className="btn-main"
+                                style={{ marginBottom: '2rem' }}
+                            >
+                                <RefreshCcw size={18} className={isBackingUp ? 'animate-spin' : ''} />
+                                {isBackingUp ? 'Creando backup...' : 'Crear Backup Ahora'}
+                            </button>
+
+                            <div style={{ background: '#0f172a', borderRadius: '12px', border: '1px solid #334155', overflow: 'hidden' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                    <thead>
+                                        <tr>
+                                            <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', borderBottom: '1px solid #334155', background: 'rgba(15,23,42,0.5)' }}>Archivo</th>
+                                            <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', borderBottom: '1px solid #334155', background: 'rgba(15,23,42,0.5)' }}>Tamaño</th>
+                                            <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.7rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', borderBottom: '1px solid #334155', background: 'rgba(15,23,42,0.5)' }}>Fecha</th>
+                                            <th style={{ padding: '0.75rem 1rem', textAlign: 'right', fontSize: '0.7rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', borderBottom: '1px solid #334155', background: 'rgba(15,23,42,0.5)' }}>Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {backups.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={4} style={{ padding: '3rem', textAlign: 'center', color: '#64748b' }}>
+                                                    <RefreshCcw size={32} style={{ opacity: 0.3, marginBottom: '0.5rem' }} />
+                                                    <p>No hay backups todavía. Crea el primero.</p>
+                                                </td>
+                                            </tr>
+                                        ) : backups.map((b, i) => (
+                                            <tr key={i} style={{ borderBottom: '1px solid #1e293b' }}>
+                                                <td style={{ padding: '0.75rem 1rem', color: '#e2e8f0', fontSize: '0.85rem' }}>{b.filename}</td>
+                                                <td style={{ padding: '0.75rem 1rem', color: '#94a3b8', fontSize: '0.85rem' }}>{(b.size / 1024).toFixed(1)} KB</td>
+                                                <td style={{ padding: '0.75rem 1rem', color: '#94a3b8', fontSize: '0.85rem' }}>{new Date(b.createdAt).toLocaleString()}</td>
+                                                <td style={{ padding: '0.75rem 1rem', textAlign: 'right' }}>
+                                                    <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                                        <a
+                                                            href={backupApi.getDownloadUrl(b.filename)}
+                                                            download
+                                                            style={{ background: 'rgba(59,130,246,0.1)', color: '#3b82f6', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700, textDecoration: 'none' }}
+                                                        >
+                                                            Descargar
+                                                        </a>
+                                                        <button
+                                                            onClick={async () => {
+                                                                try {
+                                                                    await backupApi.deleteBackup(b.filename);
+                                                                    toast.success('Backup eliminado');
+                                                                    const res = await backupApi.getBackups();
+                                                                    setBackups(res.data);
+                                                                } catch (error) {
+                                                                    toast.error('Error al eliminar backup');
+                                                                }
+                                                            }}
+                                                            style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: 'none', padding: '0.4rem 0.8rem', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700 }}
+                                                        >
+                                                            Eliminar
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     )}
 

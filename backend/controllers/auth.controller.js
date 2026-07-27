@@ -2,6 +2,7 @@ const prisma = require('../db');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { logAudit } = require('../utils/audit');
+const { getIO } = require('../utils/socket');
 
 const getUsers = async (req, res) => {
     try {
@@ -34,6 +35,8 @@ const createUser = async (req, res) => {
             createdUserName: user.name,
             role: user.role.name 
         }, req.user.branch_id);
+
+        if (getIO()) getIO().emit('USER_CREATED', { userId: user.id, name: user.name });
 
         res.json(user);
     } catch (error) {
@@ -74,6 +77,8 @@ const updateUser = async (req, res) => {
             isActive: user.isActive,
             role: user.role.name
         }, req.user.branch_id);
+
+        if (getIO()) getIO().emit('USER_UPDATED', { userId: user.id, name: user.name });
 
         res.json(user);
     } catch (error) {
@@ -141,6 +146,17 @@ const login = async (req, res) => {
             ip
         );
 
+        if (getIO()) getIO().emit('LOGIN_SUCCESS', { userId: authenticatedUser.id, name: authenticatedUser.name });
+
+        const permissions = authenticatedUser.role?.permissions
+            ? (() => {
+                const parsed = typeof authenticatedUser.role.permissions === 'string'
+                    ? JSON.parse(authenticatedUser.role.permissions)
+                    : authenticatedUser.role.permissions;
+                return Array.isArray(parsed) ? parsed : [];
+            })()
+            : [];
+
         res.json({
             token,
             user: {
@@ -149,7 +165,8 @@ const login = async (req, res) => {
                 role: authenticatedUser.role.name,
                 branch_id: authenticatedUser.branchId,
                 branch_name: authenticatedUser.branch?.name,
-                color_hex: authenticatedUser.branch?.colorHex
+                color_hex: authenticatedUser.branch?.colorHex,
+                permissions
             }
         });
 
@@ -182,4 +199,37 @@ const verifyPin = async (req, res) => {
     }
 };
 
-module.exports = { login, getUsers, createUser, updateUser, verifyPin };
+const deleteUser = async (req, res) => {
+    const { id } = req.params;
+    if (req.user.role !== 'Super Admin') {
+        return res.status(403).json({ message: 'Solo Super Admin puede eliminar usuarios' });
+    }
+    if (parseInt(id) === req.user.id) {
+        return res.status(400).json({ message: 'No puedes eliminarte a ti mismo' });
+    }
+    try {
+        await prisma.$transaction(async (tx) => {
+            await tx.auditLog.updateMany({ where: { userId: parseInt(id) }, data: { userId: null } });
+            await tx.clientPayment.updateMany({ where: { userId: parseInt(id) }, data: { userId: 1 } });
+            await tx.saleH.updateMany({ where: { userId: parseInt(id) }, data: { userId: 1 } });
+            await tx.purchaseH.updateMany({ where: { userId: parseInt(id) }, data: { userId: 1 } });
+            await tx.expense.updateMany({ where: { userId: parseInt(id) }, data: { userId: 1 } });
+            await tx.transfer.updateMany({ where: { userId: parseInt(id) }, data: { userId: 1 } });
+            await tx.user.delete({ where: { id: parseInt(id) } });
+        });
+        if (getIO()) getIO().emit('USER_DELETED', { userId: parseInt(id) });
+        res.json({ message: 'Usuario eliminado permanentemente' });
+    } catch (error) {
+        if (error.code === 'P2003') {
+            await prisma.user.update({
+                where: { id: parseInt(id) },
+                data: { isActive: false }
+            });
+            return res.json({ message: 'El usuario tiene registros asociados. Se ha desactivado en lugar de eliminar.' });
+        }
+        console.error(error);
+        res.status(500).json({ message: 'Error al eliminar usuario' });
+    }
+};
+
+module.exports = { login, getUsers, createUser, updateUser, verifyPin, deleteUser };

@@ -128,7 +128,7 @@ const Ticket = forwardRef<HTMLDivElement, TicketProps>(({ sale, businessConfig }
                 </div>
                 <div className="ticket-info-row">
                     <span>Fecha:</span>
-                    <span>{format(new Date(sale.createdAt), "dd/MM/yy HH:mm")}</span>
+                    <span>{format(new Date(sale.createdAt), "dd/MM/yy HH:mm:ss")}</span>
                 </div>
                 <div className="ticket-info-row">
                     <span>Cajero:</span>

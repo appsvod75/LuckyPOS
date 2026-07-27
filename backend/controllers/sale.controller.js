@@ -1,6 +1,7 @@
 const prisma = require('../db');
 const { logAudit } = require('../utils/audit');
-const { io } = require('../server');
+const { getIO } = require('../utils/socket');
+const { localDateStr, startOfLocalDay, endOfLocalDay, localDate, UTC_OFFSET } = require('../utils/timezone');
 
 const createSale = async (req, res) => {
     let { branch_id, items, payment_method, discount = 0, client_id, due_date, amount_tendered, change, customDate } = req.body;
@@ -76,7 +77,7 @@ const createSale = async (req, res) => {
                     balance: payment_method === 'CREDITO' ? finalTotal : 0,
                     amountTendered: Number(amount_tendered) || finalTotal,
                     change: Number(change) || 0,
-                    createdAt: (user_role === 'Admin' && customDate) ? new Date(customDate.includes('T') ? `${customDate}-06:00` : `${customDate}T${new Date().toLocaleTimeString('en-GB')}-06:00`) : undefined,
+                    createdAt: (user_role === 'Admin' && customDate) ? new Date(customDate.includes('T') ? `${customDate}${UTC_OFFSET}` : `${customDate}T${new Date().toLocaleTimeString('en-GB')}${UTC_OFFSET}`) : undefined,
                     details: {
                         create: saleDetailsData
                     }
@@ -89,7 +90,10 @@ const createSale = async (req, res) => {
         await logAudit(user_id, 'CREATE_SALE', { saleId: sale.id, total: sale.total, itemsCount: items.length }, branch_id);
 
         // Notify other clients about inventory change
-        if (io) io.emit('INVENTORY_UPDATED', { branchId: branch_id });
+        if (io) {
+            getIO().emit('INVENTORY_UPDATED', { branchId: branch_id });
+            getIO().emit('SALE_CREATED', { saleId: sale.id, total: sale.total });
+        }
 
         res.json({ message: 'Venta registrada con éxito', sale_id: sale.id, total: sale.total });
 
@@ -101,8 +105,12 @@ const createSale = async (req, res) => {
 
 const getAccountsReceivable = async (req, res) => {
     try {
+        const whereClause = { balance: { gt: 0 } };
+        if (req.user.role === 'Vendedor') {
+            whereClause.branchId = req.user.branch_id;
+        }
         const sales = await prisma.saleH.findMany({
-            where: { balance: { gt: 0 } },
+            where: whereClause,
             include: { client: true, branch: true },
             orderBy: { createdAt: 'asc' }
         });
@@ -158,29 +166,15 @@ const getSalesHistory = async (req, res) => {
             whereClause.branchId = parseInt(targetBranchId);
         }
 
-        // --- Lógica de Filtrado por Fecha (Fixed with Offset -06:00) ---
-        // Forzamos el offset para que la medianoche sea la local.
-        const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/El_Salvador' });
-        
-        let startStr = startDate ? `${startDate}T00:00:00-06:00` : null;
-        let endStr = endDate ? (endDate.includes('T') ? `${endDate.split('T')[0]}T23:59:59-06:00` : `${endDate}T23:59:59-06:00`) : `${todayStr}T23:59:59-06:00`;
+        let start = startDate ? startOfLocalDay(startDate) : startOfLocalDay();
+        start.setDate(start.getDate() - (startDate ? 0 : 3));
 
-        let start;
-        if (startStr) {
-            start = new Date(startStr);
-        } else {
-            // Default: 3 días atrás al inicio del día local
-            start = new Date(`${todayStr}T00:00:00-06:00`);
-            start.setDate(start.getDate() - 3);
-        }
-
-        let end = new Date(endStr);
+        let end = endDate ? (endDate.includes('T') ? new Date(`${endDate.split('T')[0]}T23:59:59${UTC_OFFSET}`) : endOfLocalDay(endDate)) : endOfLocalDay();
 
         whereClause.createdAt = {
             gte: start,
             lte: end
         };
-        // --------------------------------------------------------
 
         if (search) {
             whereClause.OR = [
@@ -333,6 +327,7 @@ const payAccountReceivable = async (req, res) => {
             });
         }, { timeout: 10000 });
 
+        if (getIO()) getIO().emit('PAYMENT_RECEIVED', { clientId: parseInt(clientId), amount: parsedAmount });
         res.json({ message: 'Cobro registrado y distribuido con éxito' });
     } catch (error) {
         console.error('Error paying account:', error);
@@ -367,7 +362,7 @@ const updateSale = async (req, res) => {
     const user_role = req.user.role;
 
     // Solo Admins o SuperAdmins pueden editar
-    if (user_role !== 'Admin' && req.user.id !== 1) {
+    if (user_role !== 'Admin' && user_role !== 'Super Admin') {
         return res.status(403).json({ message: 'No tienes permiso para editar ventas' });
     }
 
@@ -470,7 +465,7 @@ const updateSale = async (req, res) => {
                     clientId: clientId ? parseInt(clientId) : originalSale.clientId,
                     amountTendered: amount_tendered !== undefined ? Number(amount_tendered) : originalSale.amountTendered,
                     change: change !== undefined ? Number(change) : (amount_tendered !== undefined ? Number(amount_tendered) : Number(originalSale.amountTendered)) - finalTotal,
-                    createdAt: customDate ? new Date(customDate.includes('T') ? `${customDate}-06:00` : `${customDate}T${new Date().toLocaleTimeString('en-GB')}-06:00`) : undefined,
+                    createdAt: customDate ? new Date(customDate.includes('T') ? `${customDate}${UTC_OFFSET}` : `${customDate}T${new Date().toLocaleTimeString('en-GB')}${UTC_OFFSET}`) : undefined,
                     // Si era crédito, actualizamos balance para reflejar el nuevo total
                     balance: (payment_method === 'CREDITO' || originalSale.paymentMethod === 'CREDITO') ? finalTotal : 0,
                     details: {
@@ -482,7 +477,10 @@ const updateSale = async (req, res) => {
         }, { timeout: 15000 });
 
         await logAudit(user_id, 'UPDATE_SALE', { saleId: id, total: result.total }, result.branchId);
-        if (io) io.emit('INVENTORY_UPDATED', { branchId: result.branchId });
+        if (io) {
+            getIO().emit('INVENTORY_UPDATED', { branchId: result.branchId });
+            getIO().emit('SALE_UPDATED', { saleId: result.id, total: result.total });
+        }
 
         res.json({ message: 'Venta actualizada con éxito', sale: result });
 
@@ -492,4 +490,67 @@ const updateSale = async (req, res) => {
     }
 };
 
-module.exports = { createSale, getAccountsReceivable, getSalesHistory, getSaleById, payAccountReceivable, getClientPayments, updateSale };
+const deleteSale = async (req, res) => {
+    const { id } = req.params;
+    const user_role = req.user.role;
+
+    if (user_role !== 'Admin' && user_role !== 'Super Admin') {
+        return res.status(403).json({ message: 'No tienes permiso para anular ventas' });
+    }
+
+    let saleBranchId;
+    try {
+        await prisma.$transaction(async (tx) => {
+            const sale = await tx.saleH.findUnique({
+                where: { id: parseInt(id) },
+                include: { details: true }
+            });
+
+            if (!sale) throw new Error('Venta no encontrada');
+            saleBranchId = sale.branchId;
+
+            // Restore inventory for each item
+            for (const detail of sale.details) {
+                const product = await tx.product.findUnique({ where: { id: detail.productId } });
+                if (product && !product.isService) {
+                    await tx.inventory.update({
+                        where: {
+                            branchId_productId: {
+                                branchId: sale.branchId,
+                                productId: detail.productId
+                            }
+                        },
+                        data: { stockLevel: { increment: detail.quantity } }
+                    });
+                }
+            }
+
+            // Remove payment applications
+            await tx.paymentApplication.deleteMany({ where: { saleId: sale.id } });
+
+            // Delete the sale (details cascade via onDelete)
+            await tx.saleH.delete({ where: { id: sale.id } });
+
+            await tx.auditLog.create({
+                data: {
+                    userId: req.user.id,
+                    action: 'DELETE_SALE',
+                    details: JSON.stringify({ saleId: sale.id, total: sale.total }),
+                    branchId: sale.branchId
+                }
+            });
+        });
+
+        if (io) {
+            getIO().emit('INVENTORY_UPDATED', { branchId: saleBranchId });
+            getIO().emit('SALE_DELETED', { saleId: parseInt(id) });
+        }
+
+        res.json({ message: 'Venta anulada y stock restaurado correctamente' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: error.message || 'Error al anular la venta' });
+    }
+};
+
+module.exports = { createSale, getAccountsReceivable, getSalesHistory, getSaleById, payAccountReceivable, getClientPayments, updateSale, deleteSale };

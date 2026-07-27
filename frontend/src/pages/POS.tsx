@@ -111,8 +111,8 @@ const POS: React.FC = () => {
       matchesCategory = p.category_name === activeCategory;
     }
 
-    const matchesSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.sku?.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = p.name.toLowerCase()?.includes(searchQuery.toLowerCase()) ||
+      (p.sku && p.sku.toLowerCase()?.includes(searchQuery.toLowerCase()));
     return matchesCategory && matchesSearch;
   });
 

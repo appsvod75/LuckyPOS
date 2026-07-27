@@ -469,14 +469,14 @@ const Inventory: React.FC = () => {
 
     const filteredItemSearch = products.filter(p =>
         !p.is_service && (
-            p.name.toLowerCase().includes(itemSearch.toLowerCase()) ||
-            p.sku?.toLowerCase().includes(itemSearch.toLowerCase())
+            p.name.toLowerCase()?.includes(itemSearch.toLowerCase()) ||
+            p.sku?.toLowerCase()?.includes(itemSearch.toLowerCase())
         )
     ).slice(0, 5);
 
     const filteredProducts = products.filter(p =>
-        p.name.toLowerCase().includes(search.toLowerCase()) ||
-        p.sku?.toLowerCase().includes(search.toLowerCase())
+        p.name.toLowerCase()?.includes(search.toLowerCase()) ||
+        p.sku?.toLowerCase()?.includes(search.toLowerCase())
     );
 
     const selectedProduct = products.find(p => p.id === selectedId);
@@ -923,7 +923,7 @@ const Inventory: React.FC = () => {
                                                                 <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 600 }}>-- Directo (Sin Proveedor) --</span>
                                                             </div>
                                                             {(() => {
-                                                                const filtered = providers.filter(p => p.name.toLowerCase().includes(providerSearch.toLowerCase()));
+                                                                const filtered = providers.filter(p => p.name.toLowerCase()?.includes(providerSearch.toLowerCase()));
                                                                 return (
                                                                     <>
                                                                         {filtered.map(p => (

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShoppingCart, Package, Layers, Users, User, History, TrendingUp, DollarSign, Activity, Wallet, Truck, LogOut, Settings, ShieldCheck, Archive, Receipt, BarChart3, LineChart, Eye, Tags, Store, Building2, Banknote } from 'lucide-react';
+import { ShoppingCart, Package, Layers, Users, User, History, TrendingUp, DollarSign, Activity, Wallet, Truck, LogOut, Settings, ShieldCheck, Archive, Receipt, BarChart3, LineChart, Eye, Tags, Store, Building2, Banknote, PieChart, Search } from 'lucide-react';
 import { motion } from 'framer-motion';
 import Sidebar from '../components/Sidebar';
 import { configApi } from '../services/api';
@@ -14,6 +14,7 @@ const AdminDashboard: React.FC = () => {
     const [statsData, setStatsData] = React.useState<any>(null);
     const [isLoadingStats, setIsLoadingStats] = React.useState(true);
     const [showExitModal, setShowExitModal] = React.useState(false);
+    const [dashConfig, setDashConfig] = React.useState<string[]>([]);
 
     // --- GUARDIA DE BOTÓN ATRÁS (Native Back Button) ---
     React.useEffect(() => {
@@ -47,6 +48,13 @@ const AdminDashboard: React.FC = () => {
 
                 if (logoRes.data?.logoUrl) setLogoUrl(logoRes.data.logoUrl);
                 setStatsData(statsRes.data);
+                const sc = logoRes.data?.sidebarConfig;
+                if (sc) {
+                    const parsed = typeof sc === 'string' ? JSON.parse(sc) : sc;
+                    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.dashboard) {
+                        setDashConfig(parsed.dashboard);
+                    }
+                }
             } catch (error) {
                 console.error('Error fetching dashboard data', error);
             } finally {
@@ -92,7 +100,8 @@ const AdminDashboard: React.FC = () => {
             value: statsData ? statsData.lowStockCount.toString() : '0',
             icon: <Package size={18} />,
             color: 'text-amber-400',
-            bg: 'bg-amber-500/10'
+            bg: 'bg-amber-500/10',
+            onClick: () => navigate('/replenishment')
         },
         {
             label: 'Nuevos Clientes (Global)',
@@ -122,7 +131,24 @@ const AdminDashboard: React.FC = () => {
         { title: 'Configuración', icon: <Settings size={22} />, path: '/settings', desc: 'Ajustes maestros' },
         { title: 'Reportes', icon: <BarChart3 size={22} />, path: '/reports', desc: 'Estadísticas' },
         { title: 'Proyecciones', icon: <LineChart size={22} />, path: '/projections', desc: 'Metas y pronósticos' },
+        { title: 'Traslados', icon: <Truck size={22} />, path: '/transfers', desc: 'Transferencias entre sucursales' },
+        { title: 'Consultar', icon: <Search size={22} />, path: '/lookup', desc: 'Búsqueda por código de barras' },
     ];
+
+    const moduleTitles = modules.map(m => m.title);
+
+    // Merge saved order with any new modules not yet in config
+    const fullOrder = dashConfig.length > 0
+        ? [...dashConfig, ...moduleTitles.filter(t => !dashConfig.includes(t))]
+        : moduleTitles;
+
+    const sortedModules = [...modules].sort((a, b) => {
+        const aIdx = fullOrder.indexOf(a.title);
+        const bIdx = fullOrder.indexOf(b.title);
+        return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
+    });
+
+
 
     return (
         <div className="admin-dashboard-page">
@@ -180,6 +206,68 @@ const AdminDashboard: React.FC = () => {
                                 </div>
                             ))}
                         </div>
+
+                        {statsData && statsData.sales?.branches && Object.keys(statsData.sales.branches).length > 0 && (
+                            <div style={{ marginTop: '0.5rem' }}>
+                                <h3 style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <BarChart3 size={14} /> Ventas por Sucursal
+                                </h3>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                    {Object.entries(statsData.sales.branches).map(([name, data]: [string, any], idx) => {
+                                        const maxAmount = Math.max(...Object.values(statsData.sales.branches).map((b: any) => b.amount));
+                                        const width = (data.amount / maxAmount) * 100;
+                                        const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+                                        return (
+                                            <div key={idx}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: '0.3rem' }}>
+                                                    <span style={{ color: '#94a3b8', fontWeight: 600 }}>{name}</span>
+                                                    <span style={{ color: '#e2e8f0', fontWeight: 700 }}>
+                                                        {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(data.amount)}
+                                                    </span>
+                                                </div>
+                                                <div style={{ width: '100%', height: '6px', background: '#1e293b', borderRadius: '10px', overflow: 'hidden' }}>
+                                                    <motion.div
+                                                        initial={{ width: 0 }}
+                                                        animate={{ width: `${width}%` }}
+                                                        transition={{ duration: 1, delay: idx * 0.1 }}
+                                                        style={{ height: '100%', background: colors[idx % colors.length], borderRadius: '10px' }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {statsData && (
+                            <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(15,23,42,0.5)', borderRadius: '12px', border: '1px solid #1e293b' }}>
+                                <h3 style={{ fontSize: '0.7rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <PieChart size={14} /> Resumen del Día
+                                </h3>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                                        <span style={{ color: '#94a3b8' }}>Ventas</span>
+                                        <span style={{ color: '#10b981', fontWeight: 700 }}>
+                                            {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(statsData.sales.totalAmount)}
+                                        </span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                                        <span style={{ color: '#94a3b8' }}>Gastos</span>
+                                        <span style={{ color: '#ef4444', fontWeight: 700 }}>
+                                            {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(statsData.totalExpenses || 0)}
+                                        </span>
+                                    </div>
+                                    <div style={{ borderTop: '1px solid #1e293b', margin: '0.25rem 0' }} />
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                                        <span style={{ color: '#e2e8f0', fontWeight: 700 }}>Neto</span>
+                                        <span style={{ color: (statsData.sales.totalAmount - (statsData.totalExpenses || 0)) >= 0 ? '#3b82f6' : '#ef4444', fontWeight: 900 }}>
+                                            {new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(statsData.sales.totalAmount - (statsData.totalExpenses || 0))}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </aside>
 
                     <section className="modules-area">
@@ -199,11 +287,10 @@ const AdminDashboard: React.FC = () => {
                                 initial="hidden"
                                 animate="show"
                             >
-                                {modules
+                                {sortedModules
                                     .filter(mod => {
-                                        // RBAC: Solo Super Admin (ID 1) ve Configuración y Personal
-                                        if (mod.title === 'Configuración' || mod.title === 'Personal') {
-                                            return user.id === 1;
+                                        if (mod.title === 'Configuración' || mod.title === 'Personal' || mod.title === 'Sucursales') {
+                                            return user.role === 'Super Admin';
                                         }
                                         return true;
                                     })

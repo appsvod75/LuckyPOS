@@ -1,4 +1,5 @@
 const prisma = require('../db');
+const { getIO } = require('../utils/socket');
 
 const getConfig = async (req, res) => {
     try {
@@ -17,8 +18,8 @@ const getConfig = async (req, res) => {
 
 const updateConfig = async (req, res) => {
     try {
-        if (req.user.id !== 1) {
-            return res.status(403).json({ message: 'Acceso denegado: Solo el Super Admin (ID 1) puede modificar la configuración.' });
+        if (req.user.role !== 'Super Admin') {
+            return res.status(403).json({ message: 'Acceso denegado: Solo el Super Admin puede modificar la configuración.' });
         }
 
         let { 
@@ -50,6 +51,7 @@ const updateConfig = async (req, res) => {
             cronService.scheduleClosingJob();
         }
 
+        if (getIO()) getIO().emit('CONFIG_UPDATED', config);
         res.json(config);
     } catch (error) {
         console.error(error);

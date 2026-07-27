@@ -1,4 +1,5 @@
 const prisma = require('../db');
+const { getIO } = require('../utils/socket');
 
 const getClients = async (req, res) => {
     try {
@@ -29,6 +30,7 @@ const createClient = async (req, res) => {
             }
         });
         console.log('--- CREATE CLIENT SUCCESS ---');
+        if (getIO()) getIO().emit('CLIENT_CREATED', newClient);
         res.status(201).json({ message: 'Client created successfully', data: newClient });
     } catch (error) {
         console.error('--- CREATE CLIENT ERROR ---');
@@ -52,6 +54,7 @@ const updateClient = async (req, res) => {
                 isActive: isActive !== undefined ? isActive : true
             }
         });
+        if (getIO()) getIO().emit('CLIENT_UPDATED', updatedClient);
         res.json({ message: 'Client updated successfully', data: updatedClient });
     } catch (error) {
         console.error('Error updating client:', error);

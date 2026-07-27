@@ -41,6 +41,8 @@ const SalesHistory: React.FC = () => {
     const [isEditing, setIsEditing] = useState(false);
     const [editItems, setEditItems] = useState<any[]>([]);
     const [editDate, setEditDate] = useState('');
+    const [voidTarget, setVoidTarget] = useState<SaleRecord | null>(null);
+    const [isVoiding, setIsVoiding] = useState(false);
     const [showKeyboard, setShowKeyboard] = useState(false);
     const [activeEditIdx, setActiveEditIdx] = useState<number | null>(null);
     const user = JSON.parse(localStorage.getItem('user') || '{"role": "Vendedor"}');
@@ -125,8 +127,8 @@ const SalesHistory: React.FC = () => {
             setIsSearchingProducts(true);
             const res = await productApi.getProducts(selectedSale?.branchId || user.branch_id);
             const filtered = res.data.filter((p: any) => 
-                p.name.toLowerCase().includes(query.toLowerCase()) || 
-                p.sku?.toLowerCase().includes(query.toLowerCase())
+                p.name.toLowerCase()?.includes(query.toLowerCase()) || 
+                p.sku?.toLowerCase()?.includes(query.toLowerCase())
             );
             
             // Expandir variantes para que sean seleccionables individualmente
@@ -374,7 +376,8 @@ const SalesHistory: React.FC = () => {
                                 </div>
                             </div>
                             <div className="modal-actions-header" style={{ display: 'flex', gap: '0.5rem' }}>
-                                {(user.role === 'Admin' || user.id === 1) && !isEditing && (
+                                {(user.role === 'Admin' || user.role === 'Super Admin') && !isEditing && (
+                                    <>
                                     <button 
                                         className="btn-edit-sale" 
                                         onClick={() => {
@@ -387,6 +390,13 @@ const SalesHistory: React.FC = () => {
                                     >
                                         <Filter size={18} /> Editar Venta
                                     </button>
+                                    <button 
+                                        className="btn-void-sale"
+                                        onClick={() => setVoidTarget(selectedSale)}
+                                    >
+                                        <XCircle size={18} /> Anular
+                                    </button>
+                                    </>
                                 )}
                                 {isEditing && (
                                     <>
@@ -600,6 +610,60 @@ const SalesHistory: React.FC = () => {
                 </div>
             )}
 
+            {voidTarget && (
+                <div className="modal-overlay" onClick={() => setVoidTarget(null)}>
+                    <div className="modal-content" style={{ maxWidth: '420px' }} onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <h2>Anular Venta #{voidTarget.id}</h2>
+                            <button className="close-btn" onClick={() => setVoidTarget(null)}>×</button>
+                        </div>
+                        <div className="modal-body">
+                            <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '12px', padding: '1rem' }}>
+                                <p style={{ color: '#fca5a5', fontWeight: 700, margin: 0 }}>
+                                    ¿Estás seguro de anular esta venta?
+                                </p>
+                                <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: '0.5rem', marginBottom: 0 }}>
+                                    Se restaurará el stock de todos los productos. Esta acción no se puede deshacer.
+                                </p>
+                            </div>
+                            <div className="void-summary">
+                                <div>
+                                    <span className="void-label">Total</span>
+                                    <span className="void-value">{formatCurrency(voidTarget.total)}</span>
+                                </div>
+                                <div>
+                                    <span className="void-label">Cliente</span>
+                                    <span className="void-value">{voidTarget.client?.name || 'Varios'}</span>
+                                </div>
+                                <div>
+                                    <span className="void-label">Items</span>
+                                    <span className="void-value">{voidTarget.details.length}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="modal-footer">
+                            <button type="button" className="btn-secondary" onClick={() => setVoidTarget(null)}>Cancelar</button>
+                            <button type="button" className="btn-void-confirm" disabled={isVoiding} onClick={async () => {
+                                try {
+                                    setIsVoiding(true);
+                                    await saleApi.deleteSale(voidTarget.id);
+                                    toast.success('Venta anulada y stock restaurado');
+                                    setVoidTarget(null);
+                                    setSelectedSale(null);
+                                    fetchHistory();
+                                } catch (error) {
+                                    toast.error('Error al anular la venta');
+                                } finally {
+                                    setIsVoiding(false);
+                                }
+                            }}>
+                                <XCircle size={18} /> {isVoiding ? 'Anulando...' : 'Sí, Anular Venta'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Hidden Ticket for Printing */}
             <div style={{ display: 'none' }}>
                 <div className="print-only">
@@ -714,6 +778,55 @@ const SalesHistory: React.FC = () => {
                     background: #f59e0b;
                     color: white;
                 }
+
+                .btn-void-sale {
+                    background: rgba(239, 68, 68, 0.1);
+                    color: #ef4444;
+                    border: 1px solid rgba(239, 68, 68, 0.3);
+                    padding: 0.5rem 1rem;
+                    border-radius: 8px;
+                    font-weight: 700;
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    cursor: pointer;
+                    font-size: 0.8rem;
+                    transition: all 0.2s;
+                }
+                .btn-void-sale:hover {
+                    background: #ef4444;
+                    color: white;
+                }
+                .btn-void-confirm {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.5rem;
+                    background: #dc2626;
+                    color: white;
+                    padding: 0.75rem 1.5rem;
+                    border-radius: 8px;
+                    font-weight: 700;
+                    cursor: pointer;
+                    border: none;
+                    transition: background 0.2s;
+                }
+                .btn-void-confirm:hover:not(:disabled) { background: #b91c1c; }
+                .btn-void-confirm:disabled { opacity: 0.7; cursor: not-allowed; }
+                .void-summary {
+                    display: flex;
+                    gap: 2rem;
+                    background: rgba(15, 23, 42, 0.5);
+                    padding: 1rem;
+                    border-radius: 8px;
+                    border: 1px solid #334155;
+                }
+                .void-summary > div {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.25rem;
+                }
+                .void-label { font-size: 0.65rem; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+                .void-value { font-size: 1rem; font-weight: 700; color: #e2e8f0; }
 
                 .edit-qty-input {
                     width: 60px;

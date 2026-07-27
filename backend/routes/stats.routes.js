@@ -1,14 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const statsController = require('../controllers/stats.controller');
+const authMiddleware = require('../middleware/auth.middleware');
 
-// Simple auth middleware for now
-const auth = (req, res, next) => {
-    req.user = { id: 1 };
-    next();
-};
-
-router.get('/dashboard', auth, statsController.getDashboardStats);
-router.get('/reports', auth, statsController.getReports);
+router.get('/dashboard', authMiddleware, statsController.getDashboardStats);
+router.get('/reports', authMiddleware, statsController.getReports);
+router.get('/profits', authMiddleware, statsController.getProfits);
 
 module.exports = router;

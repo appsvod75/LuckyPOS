@@ -96,8 +96,8 @@ const CheckoutModal: React.FC<CheckoutModalProps> = ({ orderTotal, onClose, onCo
     };
 
     const filteredClients = clients.filter(c =>
-        c.name.toLowerCase().includes(searchClient.toLowerCase()) ||
-        (c.documentId && c.documentId.toLowerCase().includes(searchClient.toLowerCase()))
+        c.name.toLowerCase()?.includes(searchClient.toLowerCase()) ||
+        (c.documentId && c.documentId.toLowerCase()?.includes(searchClient.toLowerCase()))
     );
 
     const highlightMatch = (text: string | null, query: string) => {

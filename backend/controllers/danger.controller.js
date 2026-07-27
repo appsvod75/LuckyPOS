@@ -1,12 +1,17 @@
 const prisma = require('../db');
+const { getIO } = require('../utils/socket');
 
-const SUPER_ADMIN_PIN = "020518";
+const getSuperAdminPin = async () => {
+    const config = await prisma.masterConfig.findFirst();
+    return config?.adminPin || process.env.SUPER_ADMIN_PIN || '020518';
+};
 
 const resetSales = async (req, res) => {
     const { pin } = req.body;
+    const SUPER_ADMIN_PIN = await getSuperAdminPin();
 
-    if (req.user.id !== 1 || pin !== SUPER_ADMIN_PIN) {
-        return res.status(403).json({ message: 'Acceso denegado: Requiere privilegios de Super Admin (ID 1) y PIN correcto.' });
+    if (req.user.role !== 'Super Admin' || pin !== SUPER_ADMIN_PIN) {
+        return res.status(403).json({ message: 'Acceso denegado: Requiere privilegios de Super Admin y PIN correcto.' });
     }
 
     try {
@@ -19,6 +24,7 @@ const resetSales = async (req, res) => {
             prisma.expense.deleteMany()
         ]);
 
+        if (getIO()) getIO().emit('DATA_RESET', { type: 'SALES' });
         res.json({ message: 'Datos de ventas y financieros eliminados correctamente' });
     } catch (error) {
         console.error('Error in resetSales:', error);
@@ -28,9 +34,10 @@ const resetSales = async (req, res) => {
 
 const resetInventory = async (req, res) => {
     const { pin } = req.body;
+    const SUPER_ADMIN_PIN = await getSuperAdminPin();
 
-    if (req.user.id !== 1 || pin !== SUPER_ADMIN_PIN) {
-        return res.status(403).json({ message: 'Acceso denegado: Requiere privilegios de Super Admin (ID 1) y PIN correcto.' });
+    if (req.user.role !== 'Super Admin' || pin !== SUPER_ADMIN_PIN) {
+        return res.status(403).json({ message: 'Acceso denegado: Requiere privilegios de Super Admin y PIN correcto.' });
     }
 
     try {
@@ -41,6 +48,7 @@ const resetInventory = async (req, res) => {
             prisma.inventoryLot.deleteMany()
         ]);
 
+        if (getIO()) getIO().emit('DATA_RESET', { type: 'INVENTORY' });
         res.json({ message: 'Stock de inventario reiniciado a cero' });
     } catch (error) {
         console.error('Error in resetInventory:', error);
@@ -50,9 +58,10 @@ const resetInventory = async (req, res) => {
 
 const resetProducts = async (req, res) => {
     const { pin } = req.body;
+    const SUPER_ADMIN_PIN = await getSuperAdminPin();
 
-    if (req.user.id !== 1 || pin !== SUPER_ADMIN_PIN) {
-        return res.status(403).json({ message: 'Acceso denegado: Requiere privilegios de Super Admin (ID 1) y PIN correcto.' });
+    if (req.user.role !== 'Super Admin' || pin !== SUPER_ADMIN_PIN) {
+        return res.status(403).json({ message: 'Acceso denegado: Requiere privilegios de Super Admin y PIN correcto.' });
     }
 
     try {
@@ -70,6 +79,7 @@ const resetProducts = async (req, res) => {
             // Category table is preserved as requested
         ]);
 
+        if (getIO()) getIO().emit('DATA_RESET', { type: 'PRODUCTS' });
         res.json({ message: 'Todos los productos y sus datos asociados han sido eliminados correctamente' });
     } catch (error) {
         console.error('Error in resetProducts:', error);

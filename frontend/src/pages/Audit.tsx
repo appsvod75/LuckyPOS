@@ -32,9 +32,9 @@ const Audit: React.FC = () => {
     }, []);
 
     const filteredLogs = logs.filter(log =>
-        log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        log.user?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (log.details && log.details.toLowerCase().includes(searchTerm.toLowerCase()))
+        log.action.toLowerCase()?.includes(searchTerm.toLowerCase()) ||
+        log.user?.name.toLowerCase()?.includes(searchTerm.toLowerCase()) ||
+        (log.details && log.details.toLowerCase()?.includes(searchTerm.toLowerCase()))
     );
 
     const getActionBadgeClass = (action: string) => {

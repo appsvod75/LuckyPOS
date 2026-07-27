@@ -99,8 +99,8 @@ const Clients: React.FC = () => {
     };
 
     const filteredClients = clients.filter(c =>
-        (c.name || '').toLowerCase().includes(search.toLowerCase()) ||
-        (c.documentId && c.documentId.toLowerCase().includes(search.toLowerCase()))
+        (c.name || '').toLowerCase()?.includes(search.toLowerCase()) ||
+        (c.documentId && c.documentId.toLowerCase()?.includes(search.toLowerCase()))
     );
 
     const getAvatarColor = (name: string) => {
