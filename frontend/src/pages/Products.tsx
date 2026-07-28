@@ -6,6 +6,7 @@ import { productApi } from '../services/api';
 import api from '../services/api';
 import { socket, socketEvents } from '../services/socket';
 import toast from 'react-hot-toast';
+import { placeholder } from '../utils/placeholder';
 
 const Products: React.FC = () => {
     const [products, setProducts] = useState<any[]>([]);
@@ -224,7 +225,7 @@ const Products: React.FC = () => {
                             {filteredProducts.map(p => (
                                 <div key={p.id} className="p-card" style={{ '--cat-color': p.category?.colorHex || getCategoryColor(p.category_name || '') } as any}>
                                     <div className="p-image">
-                                        <img src={p.imageUrl || `https://via.placeholder.com/300?text=${encodeURIComponent(p.name)}`} alt={p.name} />
+                                        <img src={p.imageUrl || placeholder(p.name, 300)} alt={p.name} />
                                         {p.isMedicine && (
                                             <div className="med-badge" title="Producto Médico">
                                                 <Pill size={12} />
@@ -290,7 +291,7 @@ const Products: React.FC = () => {
                                         <tr key={p.id} style={{ '--cat-color': p.category?.colorHex || getCategoryColor(p.category_name || '') } as any}>
                                             <td>
                                                 <div className="t-img-box">
-                                                    <img src={p.imageUrl || `https://via.placeholder.com/50?text=${encodeURIComponent(p.name)}`} alt="" />
+                                                    <img src={p.imageUrl || placeholder(p.name, 50)} alt="" />
                                                     {p.isMedicine && <Pill size={12} className="t-med-icon" />}
                                                     {p.is_service && <CheckCircle2 size={12} className="t-service-icon" />}
                                                 </div>

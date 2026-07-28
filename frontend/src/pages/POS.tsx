@@ -11,6 +11,7 @@ import CheckoutModal from '../components/CheckoutModal';
 import TicketModal from '../components/TicketModal';
 import BranchSwitcher from '../components/BranchSwitcher';
 import VirtualKeyboard from '../components/VirtualKeyboard';
+import { placeholder } from '../utils/placeholder';
 
 const getCategoryColor = (catName: string) => {
   if (!catName) return '#475569';
@@ -89,7 +90,7 @@ const POS: React.FC = () => {
       id: Date.now(),
       x: rect.left + rect.width / 2,
       y: rect.top + rect.height / 2,
-      imageUrl: product.imageUrl || `https://via.placeholder.com/150?text=${encodeURIComponent(product.name)}`
+      imageUrl: product.imageUrl || placeholder(product.name, 150)
     };
 
     setFlyingItems(prev => [...prev, newItem]);
@@ -327,7 +328,7 @@ const POS: React.FC = () => {
                 onClick={(e) => handleAddToCart(e, p)}
               >
                 <div className="product-image-container">
-                  <img src={p.imageUrl || `https://via.placeholder.com/300?text=${encodeURIComponent(p.name)}`} alt={p.name} />
+                  <img src={p.imageUrl || placeholder(p.name, 300)} alt={p.name} />
                   <button
                     className="medicine-badge zoom-btn"
                     onClick={(e) => {
@@ -653,7 +654,7 @@ const POS: React.FC = () => {
                   dragElastic={0.1}
                   animate={{ scale: zoomScale }}
                   transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                  src={zoomedProduct.imageUrl || `https://via.placeholder.com/800?text=${encodeURIComponent(zoomedProduct.name)}`}
+                    src={zoomedProduct.imageUrl || placeholder(zoomedProduct.name, 800)}
                   alt={zoomedProduct.name}
                   style={{
                     maxWidth: '90%',

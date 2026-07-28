@@ -24,7 +24,8 @@ const getInventoryByBranch = async (req, res) => {
             ...i,
             name: i.product.name,
             sku: i.product.sku,
-            base_price: i.product.basePrice
+            base_price: i.product.basePrice,
+            average_cost: Number(i.product.averageCost)
         }));
         res.json(formatted);
     } catch (error) {
@@ -63,7 +64,7 @@ const updateInventory = async (req, res) => {
         });
 
         // Notify other clients about inventory change
-        if (io) {
+        if (getIO()) {
             getIO().emit('INVENTORY_UPDATED', { branchId: parseInt(branchId) });
             getIO().emit('PRODUCT_UPDATED', { productId: parseInt(productId) }); // For min/max updates
         }
@@ -153,7 +154,7 @@ const createTransfer = async (req, res) => {
         });
 
         // Notify other clients about inventory change
-        if (io) {
+        if (getIO()) {
             getIO().emit('INVENTORY_UPDATED', { branchId: from_branch_id });
             getIO().emit('INVENTORY_UPDATED', { branchId: to_branch_id });
         }
@@ -249,7 +250,7 @@ const confirmTransfer = async (req, res) => {
         });
 
         // Notify both branches (origin and destination) about inventory change
-        if (io) {
+        if (getIO()) {
             getIO().emit('INVENTORY_UPDATED', { branchId: result.fromBranchId });
             getIO().emit('INVENTORY_UPDATED', { branchId: result.toBranchId });
         }
@@ -295,17 +296,18 @@ const getProductKardex = async (req, res) => {
         
         purchases.forEach(p => {
             const hId = p.purchaseHId;
-            if (!p.purchaseH) return; // Skip orphaned details
+            if (!p.purchaseH) return;
             if (!purchaseGroups[hId]) {
                 purchaseGroups[hId] = {
                     recordId: hId,
                     recordType: 'PURCHASE',
                     date: p.purchaseH.createdAt,
-                    type: '', // To be defined after consolidation
+                    type: '',
                     reference: p.purchaseH.invoiceNumber || `Comp #${p.purchaseH.id}`,
                     quantity: 0,
                     user: p.purchaseH.user?.name || 'Sistema',
-                    totalCost: 0
+                    totalCost: 0,
+                    unitCost: Number(p.unitCost || 0)
                 };
             }
             purchaseGroups[hId].quantity += p.quantity || 0;
@@ -319,8 +321,15 @@ const getProductKardex = async (req, res) => {
             } else {
                 group.type = group.quantity < 0 ? 'SALIDA (DEVOLUCION)' : 'INGRESO (COMPRA)';
             }
+            if (group.quantity > 0) {
+                group.unitCost = group.totalCost / group.quantity;
+            }
             consolidatedPurchases.push(group);
         });
+
+        // Get product average cost for transfer valuation
+        const product = await prisma.product.findUnique({ where: { id: prodId } });
+        const avgCost = product ? Number(product.averageCost) : 0;
 
         // 2. Map to common format
         const movements = [
@@ -332,6 +341,8 @@ const getProductKardex = async (req, res) => {
                 type: 'SALIDA (VENTAS)',
                 reference: s.saleH ? `Venta #${s.saleH.id}` : 'Venta (Sin Ref)',
                 quantity: -(s.quantity || 0),
+                unitCost: Number(s.unitPrice || 0),
+                totalCost: Number(s.subtotal || 0),
                 user: s.saleH?.user?.name || 'Sistema'
             })),
             ...transfers.map(t => {
@@ -340,6 +351,7 @@ const getProductKardex = async (req, res) => {
                 const branchName = isEntry 
                     ? (t.transfer.fromBranch?.name || 'Sucursal Desconocida') 
                     : (t.transfer.toBranch?.name || 'Sucursal Desconocida');
+                const qty = t.quantity || 0;
                 
                 return {
                     recordId: t.transfer.id,
@@ -347,7 +359,9 @@ const getProductKardex = async (req, res) => {
                     date: t.transfer.createdAt,
                     type: isEntry ? 'INGRESO (TRASLADO)' : 'SALIDA (TRASLADO)',
                     reference: `Traslado #${t.transfer.id} (${isEntry ? 'Desde ' + branchName : 'Hacia ' + branchName})`,
-                    quantity: isEntry ? (t.quantity || 0) : -(t.quantity || 0),
+                    quantity: isEntry ? qty : -qty,
+                    unitCost: avgCost,
+                    totalCost: avgCost * qty,
                     user: t.transfer.user?.name || 'Sistema'
                 };
             }).filter(Boolean)

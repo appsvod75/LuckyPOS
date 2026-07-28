@@ -286,7 +286,7 @@ const Clients: React.FC = () => {
 
                 {showModal && (
                     <div className="modal-overlay">
-                        <div className="product-modal animate-in" style={{ maxWidth: '750px' }}>
+                        <div className="product-modal animate-in">
                             <header className="modal-header">
                                 <div>
                                     <h2>{editingId ? 'Actualizar Cliente' : 'Nuevo Cliente'}</h2>
@@ -425,7 +425,7 @@ const Clients: React.FC = () => {
 
                 {showStatementModal && (
                     <div className="modal-overlay">
-                        <div className="payment-modal history-modal animate-in zoom-in-95" onClick={e => e.stopPropagation()} style={{ maxWidth: '800px', width: '90%', background: '#0f172a', borderRadius: '16px', border: '1px solid #334155', padding: '1.5rem', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
+                        <div className="payment-modal history-modal animate-in zoom-in-95" onClick={e => e.stopPropagation()} style={{ width: 'min(90%, 800px)', background: '#0f172a', borderRadius: 'clamp(12px, 2vw, 16px)', border: '1px solid #334155', padding: 'clamp(1rem, 2vw, 1.5rem)', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
                             <div className="pm-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '1rem', marginBottom: '1rem' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                     <div style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', padding: '8px', borderRadius: '10px' }}>

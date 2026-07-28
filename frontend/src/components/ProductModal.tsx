@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import VirtualKeyboard from './VirtualKeyboard';
 import NumericKeyboard from './NumericKeyboard';
+import { placeholder } from '../utils/placeholder';
 
 interface ProductModalProps {
     isOpen: boolean;
@@ -225,8 +226,7 @@ const ProductModal: React.FC<ProductModalProps> = ({
                     initial={{ opacity: 0, scale: 0.95, y: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                    className="product-modal" 
-                    style={{ maxWidth: '950px', width: '95%' }}
+                    className="product-modal"
                 >
                     <header className="modal-header">
                         <div className="header-info">
@@ -376,7 +376,7 @@ const ProductModal: React.FC<ProductModalProps> = ({
                                     </div>
                                     <div className="image-preview-box">
                                         {formData.imageUrl ? (
-                                            <img src={formData.imageUrl} alt="Preview" onError={e => e.currentTarget.src='https://via.placeholder.com/100'} />
+                                            <img src={formData.imageUrl} alt="Preview" onError={e => e.currentTarget.src=placeholder('Error', 100)} />
                                         ) : (
                                             <ImageIcon size={32} />
                                         )}

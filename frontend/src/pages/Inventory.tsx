@@ -290,8 +290,15 @@ const Inventory: React.FC = () => {
         
         let initialSubtotal: any = 0;
         let initialUnitCost: any = 0;
+        let initialQuantity = 1;
 
-        if (isAdjustment) {
+        if (docType === 'correction') {
+            const currentStock = product.inventory?.find((i: any) => i.branchId === selectedBranch)?.stockLevel || 0;
+            const avgCost = Number(product.average_cost || 0);
+            initialQuantity = currentStock;
+            initialUnitCost = avgCost;
+            initialSubtotal = 0;
+        } else if (isAdjustment) {
             initialSubtotal = 0;
             initialUnitCost = 0;
         } else if (isPurchase) {
@@ -306,11 +313,11 @@ const Inventory: React.FC = () => {
             initialUnitCost = finalCost;
         }
 
-        const newItem = {
+        const newItem: any = {
             product_id: product.id,
             name: product.name,
             sku: product.sku,
-            quantity: 1,
+            quantity: initialQuantity,
             unit_cost: initialUnitCost,
             subtotal: initialSubtotal,
             batch_number: '',
@@ -320,11 +327,14 @@ const Inventory: React.FC = () => {
             variants: product.variants || []
         };
 
+        if (docType === 'correction') {
+            newItem.current_stock = initialQuantity;
+        }
+
         setPurchaseItems([...purchaseItems, newItem]);
         setItemSearch('');
         setShowResults(false);
 
-        // Autofocus quantity of the new item
         setTimeout(() => {
             const inputs = document.querySelectorAll('.qty-input');
             const lastInput = inputs[inputs.length - 1] as HTMLInputElement;
@@ -359,11 +369,16 @@ const Inventory: React.FC = () => {
             item[field] = value;
         }
 
-        // Auto-calculate logic
-        if (field === 'quantity' || field === 'subtotal' || field === 'multiplier') {
+        if (docType === 'correction') {
+            if (field === 'quantity') {
+                const currentStock = item.current_stock ?? 0;
+                const countedQty = Number(item.quantity) || 0;
+                const difference = countedQty - currentStock;
+                item.subtotal = Math.abs(difference) * (Number(item.unit_cost) || 0);
+            }
+        } else if (field === 'quantity' || field === 'subtotal' || field === 'multiplier') {
             const qty = Number(item.quantity) || 0;
 
-            // STOCK VALIDATION FOR TRANSFERS
             if (docType === 'transfer' && (field === 'quantity' || field === 'multiplier')) {
                 const originalProduct = products.find(p => p.id === item.product_id);
                 const branchStock = originalProduct?.inventory?.find((i: any) => i.branchId === selectedBranch)?.stockLevel || 0;
@@ -372,8 +387,6 @@ const Inventory: React.FC = () => {
                 
                 if (totalTargetUnits > branchStock) {
                     toast.error(`Stock insuficiente. Solo tienes ${branchStock} unidades disponibles.`);
-                    // If it was a quantity change, we cap it. 
-                    // If it was a multiplier change, we might want to cap quantity or warn.
                     if (field === 'quantity') {
                         item.quantity = Math.floor(branchStock / mult);
                     }
@@ -385,7 +398,6 @@ const Inventory: React.FC = () => {
             const totalQty = (Number(item.quantity) || 0) * mult;
             
             if (totalQty > 0) {
-                // We keep unit_cost as the cost per BASE unit for the backend
                 item.unit_cost = sub / totalQty;
             }
         } else if (field === 'unit_cost') {
@@ -401,6 +413,14 @@ const Inventory: React.FC = () => {
     };
 
     const calculateTotal = () => {
+        if (docType === 'correction') {
+            return purchaseItems.reduce((acc, item) => {
+                const currentStock = item.current_stock ?? 0;
+                const countedQty = Number(item.quantity) || 0;
+                const difference = countedQty - currentStock;
+                return acc + Math.abs(difference) * (Number(item.unit_cost) || 0);
+            }, 0);
+        }
         return purchaseItems.reduce((acc, item) => acc + (Number(item.subtotal) || 0), 0);
     };
 
@@ -424,18 +444,45 @@ const Inventory: React.FC = () => {
                 });
                 toast.success((isAdmin && isDirectTransfer) ? 'Traslado procesado correctamente' : 'Solicitud de traslado creada', { id: loadingToast });
             } else {
-                const data = {
-                    branch_id: selectedBranch,
-                    provider_id: selectedProviderId || null,
-                    invoice_number: docType === 'adjustment_out' ? `ADJ-OUT: ${invoiceNumber}` : (docType === 'adjustment_in' ? `ADJ-IN: ${invoiceNumber}` : invoiceNumber),
-                    payment_type: paymentType,
-                    details: purchaseItems.map(item => ({
-                        ...item,
-                        quantity: (docType === 'adjustment_out' ? -1 : 1) * Number(item.quantity) * (item.multiplier || 1),
-                        unit_cost: item.unit_cost
-                    }))
-                };
-                await purchaseApi.createPurchase(data);
+                if (docType === 'correction') {
+                    const correctionData = {
+                        branch_id: selectedBranch,
+                        provider_id: null,
+                        invoice_number: `CORR: ${invoiceNumber || 'SIN-REF'}`,
+                        payment_type: 'CASH',
+                        details: purchaseItems.map(item => {
+                            const currentStock = item.current_stock ?? 0;
+                            const countedQty = Number(item.quantity) || 0;
+                            const difference = countedQty - currentStock;
+                            return {
+                                product_id: item.product_id,
+                                quantity: difference,
+                                unit_cost: Number(item.unit_cost || 0),
+                                batch_number: '',
+                                expiration_date: '',
+                                multiplier: 1
+                            };
+                        }).filter(item => item.quantity !== 0)
+                    };
+                    if (correctionData.details.length === 0) {
+                        toast.error('No hay diferencias que corregir', { id: loadingToast });
+                        return;
+                    }
+                    await purchaseApi.createPurchase(correctionData);
+                } else {
+                    const data = {
+                        branch_id: selectedBranch,
+                        provider_id: selectedProviderId || null,
+                        invoice_number: docType === 'adjustment_out' ? `ADJ-OUT: ${invoiceNumber}` : (docType === 'adjustment_in' ? `ADJ-IN: ${invoiceNumber}` : invoiceNumber),
+                        payment_type: paymentType,
+                        details: purchaseItems.map(item => ({
+                            ...item,
+                            quantity: (docType === 'adjustment_out' ? -1 : 1) * Number(item.quantity) * (item.multiplier || 1),
+                            unit_cost: item.unit_cost
+                        }))
+                    };
+                    await purchaseApi.createPurchase(data);
+                }
                 toast.success('Movimiento procesado correctamente', { id: loadingToast });
             }
 
@@ -597,6 +644,7 @@ const Inventory: React.FC = () => {
                                 <tr>
                                     <th>PRODUCTO</th>
                                     <th>CATEGORÍA</th>
+                                    <th>C. PROMEDIO</th>
                                     <th>PRECIO BASE</th>
                                     <th>STOCK GLOBAL</th>
                                     <th>ESTADO</th>
@@ -628,6 +676,7 @@ const Inventory: React.FC = () => {
                                                 {p.category_name || 'Sin Categoría'}
                                             </span>
                                         </td>
+                                        <td className="font-mono text-center" style={{ color: '#f59e0b' }}>${Number(p.average_cost || 0).toFixed(2)}</td>
                                         <td className="font-mono font-bold text-center">${Number(p.base_price || 0).toFixed(2)}</td>
                                         <td className="font-mono font-bold">{p.stock_level || 0} UN</td>
                                         <td>
@@ -664,6 +713,10 @@ const Inventory: React.FC = () => {
                                     <div className="p-stat">
                                         <label>Precio Base</label>
                                         <div className="value">${Number(selectedProduct.base_price).toFixed(2)}</div>
+                                    </div>
+                                    <div className="p-stat">
+                                        <label>Costo Promedio</label>
+                                        <div className="value" style={{ color: '#f59e0b' }}>${Number(selectedProduct.average_cost || 0).toFixed(2)}</div>
                                     </div>
                                     <div className="p-stat">
                                         <label>Stock Total</label>
@@ -792,6 +845,7 @@ const Inventory: React.FC = () => {
                                             <option value="purchase">Compra (Entrada)</option>
                                             <option value="adjustment_in">Ajuste (+)</option>
                                             <option value="adjustment_out">Ajuste (-)</option>
+                                            <option value="correction">Corrección</option>
                                             <option value="transfer">Traslado</option>
                                         </select>
                                     </div>
@@ -854,149 +908,153 @@ const Inventory: React.FC = () => {
                                             )}
                                         </>
                                     )}
-                                    <div className="form-group" ref={provSearchRef}>
-                                        <label>PROVEEDOR</label>
-                                        <div className="provider-search-container" style={{ position: 'relative' }}>
-                                            <div className="select-with-btn">
-                                                <div style={{ flex: 1, position: 'relative' }}>
-                                                    <input 
-                                                        type="text"
-                                                        placeholder="Buscar proveedor..."
-                                                        className="erp-input"
-                                                        value={providerSearch}
-                                                        onChange={(e) => {
-                                                            setProviderSearch(e.target.value);
-                                                            if (e.target.value.trim().length > 0) setShowProvResults(true);
-                                                            else setShowProvResults(false);
-                                                        }}
-                                                        onFocus={() => {
-                                                            setActiveField('providerSearch');
-                                                            setActiveKeyboard('qwerty');
-                                                            if (providerSearch.trim().length > 0) setShowProvResults(true);
-                                                        }}
-                                                        style={{ width: '100%', paddingRight: '45px' }}
-                                                        inputMode="none"
-                                                    />
-                                                    {providerSearch && (
-                                                        <button 
-                                                            onClick={() => {
-                                                                setProviderSearch('');
-                                                                setShowProvResults(false);
-                                                                setSelectedProviderId('');
+                                    {docType !== 'correction' && (
+                                        <div className="form-group" ref={provSearchRef}>
+                                            <label>PROVEEDOR</label>
+                                            <div className="provider-search-container" style={{ position: 'relative' }}>
+                                                <div className="select-with-btn">
+                                                    <div style={{ flex: 1, position: 'relative' }}>
+                                                        <input 
+                                                            type="text"
+                                                            placeholder="Buscar proveedor..."
+                                                            className="erp-input"
+                                                            value={providerSearch}
+                                                            onChange={(e) => {
+                                                                setProviderSearch(e.target.value);
+                                                                if (e.target.value.trim().length > 0) setShowProvResults(true);
+                                                                else setShowProvResults(false);
                                                             }}
-                                                            style={{
-                                                                position: 'absolute',
-                                                                right: '12px', 
-                                                                top: '50%',
-                                                                transform: 'translateY(-50%)',
-                                                                background: 'transparent',
-                                                                border: 'none',
-                                                                color: '#ef4444', 
-                                                                cursor: 'pointer',
-                                                                display: 'flex',
-                                                                alignItems: 'center',
-                                                                justifyContent: 'center',
-                                                                padding: '4px',
-                                                                zIndex: 10
+                                                            onFocus={() => {
+                                                                setActiveField('providerSearch');
+                                                                setActiveKeyboard('qwerty');
+                                                                if (providerSearch.trim().length > 0) setShowProvResults(true);
                                                             }}
-                                                        >
-                                                            <Trash2 size={18} strokeWidth={2.5} />
-                                                        </button>
-                                                    )}
-                                                    {showProvResults && providerSearch.trim().length > 0 && (
-                                                        <div className="search-results provider-results animate-in" style={{ 
-                                                            position: 'absolute', top: '100%', left: 0, right: 0, 
-                                                            zIndex: 100, background: 'white', borderRadius: '12px', 
-                                                            boxShadow: '0 10px 30px rgba(0,0,0,0.2)', maxHeight: '250px', 
-                                                            overflowY: 'auto', border: '1px solid #e2e8f0',
-                                                            marginTop: '6px'
-                                                        }}>
-                                                            <div 
-                                                                className="search-item" 
-                                                                style={{ padding: '12px 15px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', background: selectedProviderId === '' ? 'rgba(16, 185, 129, 0.1)' : 'transparent' }}
+                                                            style={{ width: '100%', paddingRight: '45px' }}
+                                                            inputMode="none"
+                                                        />
+                                                        {providerSearch && (
+                                                            <button 
                                                                 onClick={() => {
-                                                                    setSelectedProviderId('');
                                                                     setProviderSearch('');
                                                                     setShowProvResults(false);
+                                                                    setSelectedProviderId('');
+                                                                }}
+                                                                style={{
+                                                                    position: 'absolute',
+                                                                    right: '12px', 
+                                                                    top: '50%',
+                                                                    transform: 'translateY(-50%)',
+                                                                    background: 'transparent',
+                                                                    border: 'none',
+                                                                    color: '#ef4444', 
+                                                                    cursor: 'pointer',
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    padding: '4px',
+                                                                    zIndex: 10
                                                                 }}
                                                             >
-                                                                <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 600 }}>-- Directo (Sin Proveedor) --</span>
-                                                            </div>
-                                                            {(() => {
-                                                                const filtered = providers.filter(p => p.name.toLowerCase()?.includes(providerSearch.toLowerCase()));
-                                                                return (
-                                                                    <>
-                                                                        {filtered.map(p => (
-                                                                            <div 
-                                                                                key={p.id} 
-                                                                                className="search-item" 
-                                                                                style={{ padding: '12px 15px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                                                                                onClick={() => {
-                                                                                    setSelectedProviderId(p.id);
-                                                                                    setProviderSearch(p.name);
-                                                                                    setShowProvResults(false);
-                                                                                }}
-                                                                            >
-                                                                                <div>
-                                                                                    <div style={{ fontWeight: 600, color: '#1e293b', fontSize: '0.9rem' }}>{highlightMatch(p.name, providerSearch)}</div>
-                                                                                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{p.vendor || 'S/N'} • {p.phone || 'Sin tel'}</div>
+                                                                <Trash2 size={18} strokeWidth={2.5} />
+                                                            </button>
+                                                        )}
+                                                        {showProvResults && providerSearch.trim().length > 0 && (
+                                                            <div className="search-results provider-results animate-in" style={{ 
+                                                                position: 'absolute', top: '100%', left: 0, right: 0, 
+                                                                zIndex: 100, background: 'white', borderRadius: '12px', 
+                                                                boxShadow: '0 10px 30px rgba(0,0,0,0.2)', maxHeight: '250px', 
+                                                                overflowY: 'auto', border: '1px solid #e2e8f0',
+                                                                marginTop: '6px'
+                                                            }}>
+                                                                <div 
+                                                                    className="search-item" 
+                                                                    style={{ padding: '12px 15px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', background: selectedProviderId === '' ? 'rgba(16, 185, 129, 0.1)' : 'transparent' }}
+                                                                    onClick={() => {
+                                                                        setSelectedProviderId('');
+                                                                        setProviderSearch('');
+                                                                        setShowProvResults(false);
+                                                                    }}
+                                                                >
+                                                                    <span style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 600 }}>-- Directo (Sin Proveedor) --</span>
+                                                                </div>
+                                                                {(() => {
+                                                                    const filtered = providers.filter(p => p.name.toLowerCase()?.includes(providerSearch.toLowerCase()));
+                                                                    return (
+                                                                        <>
+                                                                            {filtered.map(p => (
+                                                                                <div 
+                                                                                    key={p.id} 
+                                                                                    className="search-item" 
+                                                                                    style={{ padding: '12px 15px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                                                                                    onClick={() => {
+                                                                                        setSelectedProviderId(p.id);
+                                                                                        setProviderSearch(p.name);
+                                                                                        setShowProvResults(false);
+                                                                                    }}
+                                                                                >
+                                                                                    <div>
+                                                                                        <div style={{ fontWeight: 600, color: '#1e293b', fontSize: '0.9rem' }}>{highlightMatch(p.name, providerSearch)}</div>
+                                                                                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{p.vendor || 'S/N'} • {p.phone || 'Sin tel'}</div>
+                                                                                    </div>
+                                                                                    {selectedProviderId === p.id && <Check size={16} color="#10b981" />}
                                                                                 </div>
-                                                                                {selectedProviderId === p.id && <Check size={16} color="#10b981" />}
-                                                                            </div>
-                                                                        ))}
-                                                                        {filtered.length === 0 && (
-                                                                            <div 
-                                                                                className="search-item create-new-prov" 
-                                                                                style={{ 
-                                                                                    padding: '15px', color: '#3b82f6', background: 'rgba(59, 130, 246, 0.05)', 
-                                                                                    cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center',
-                                                                                    fontWeight: 800, fontSize: '0.9rem'
-                                                                                }}
-                                                                                onClick={() => {
-                                                                                    setNewProv({ ...newProv, name: providerSearch });
-                                                                                    setIsProvModalOpen(true);
-                                                                                    setShowProvResults(false);
-                                                                                }}
-                                                                            >
-                                                                                <Plus size={18} strokeWidth={3} />
-                                                                                <span>Crear "{providerSearch}"</span>
-                                                                            </div>
-                                                                        )}
-                                                                    </>
-                                                                );
-                                                            })()}
-                                                        </div>
-                                                    )}
+                                                                            ))}
+                                                                            {filtered.length === 0 && (
+                                                                                <div 
+                                                                                    className="search-item create-new-prov" 
+                                                                                    style={{ 
+                                                                                        padding: '15px', color: '#3b82f6', background: 'rgba(59, 130, 246, 0.05)', 
+                                                                                        cursor: 'pointer', display: 'flex', gap: '10px', alignItems: 'center',
+                                                                                        fontWeight: 800, fontSize: '0.9rem'
+                                                                                    }}
+                                                                                    onClick={() => {
+                                                                                        setNewProv({ ...newProv, name: providerSearch });
+                                                                                        setIsProvModalOpen(true);
+                                                                                        setShowProvResults(false);
+                                                                                    }}
+                                                                                >
+                                                                                    <Plus size={18} strokeWidth={3} />
+                                                                                    <span>Crear "{providerSearch}"</span>
+                                                                                </div>
+                                                                            )}
+                                                                        </>
+                                                                    );
+                                                                })()}
+                                                            </div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
+                                    )}
 
-                                    <div className="form-group">
-                                        <label>PAGO</label>
-                                        <div className="payment-toggle-container">
-                                            <div className="payment-toggle mini">
-                                                <button
-                                                    className={paymentType === 'CASH' ? 'active' : ''}
-                                                    onClick={() => setPaymentType('CASH')}
-                                                >CON</button>
-                                                <button
-                                                    className={paymentType === 'CREDIT' ? 'active' : ''}
-                                                    onClick={() => setPaymentType('CREDIT')}
-                                                >CRE</button>
+                                    {docType !== 'correction' && (
+                                        <div className="form-group">
+                                            <label>PAGO</label>
+                                            <div className="payment-toggle-container">
+                                                <div className="payment-toggle mini">
+                                                    <button
+                                                        className={paymentType === 'CASH' ? 'active' : ''}
+                                                        onClick={() => setPaymentType('CASH')}
+                                                    >CON</button>
+                                                    <button
+                                                        className={paymentType === 'CREDIT' ? 'active' : ''}
+                                                        onClick={() => setPaymentType('CREDIT')}
+                                                    >CRE</button>
+                                                </div>
+                                                {paymentType === 'CREDIT' && (
+                                                    <button 
+                                                        className="vence-btn-mini animate-fade" 
+                                                        onClick={() => setIsDueDateModalOpen(true)}
+                                                        title="Establecer Fecha de Vencimiento"
+                                                    >
+                                                        <Calendar size={14} />
+                                                        <span>{dueDate ? new Date(dueDate + 'T00:00:00').toLocaleDateString() : 'FECHA'}</span>
+                                                    </button>
+                                                )}
                                             </div>
-                                            {paymentType === 'CREDIT' && (
-                                                <button 
-                                                    className="vence-btn-mini animate-fade" 
-                                                    onClick={() => setIsDueDateModalOpen(true)}
-                                                    title="Establecer Fecha de Vencimiento"
-                                                >
-                                                    <Calendar size={14} />
-                                                    <span>{dueDate ? new Date(dueDate + 'T00:00:00').toLocaleDateString() : 'FECHA'}</span>
-                                                </button>
-                                            )}
                                         </div>
-                                    </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -1006,18 +1064,38 @@ const Inventory: React.FC = () => {
                                     <table>
                                         <thead>
                                             <tr>
-                                                <th style={{ width: '25%' }}>PRODUCTO</th>
-                                                <th className="text-center" style={{ width: '10%' }}>CANT.</th>
-                                                <th className="text-center" style={{ width: '12%' }}>UNIDAD</th>
-                                                <th className="text-center" style={{ width: '9%' }}>COSTO U.</th>
-                                                <th className="text-center" style={{ width: '8%' }}>TOT. U.</th>
-                                                <th className="text-center" style={{ width: '13%' }}>TOT. LÍNEA</th>
-                                                <th className="text-center" style={{ width: '15%' }}>LOTE / VENC.</th>
-                                                <th className="text-center" style={{ width: '8%' }}>ACC.</th>
+                                                {docType === 'correction' ? (
+                                                    <>
+                                                        <th style={{ width: '30%' }}>PRODUCTO</th>
+                                                        <th className="text-center" style={{ width: '10%' }}>STOCK ACTUAL</th>
+                                                        <th className="text-center" style={{ width: '10%' }}>CONTEO</th>
+                                                        <th className="text-center" style={{ width: '10%' }}>DIF.</th>
+                                                        <th className="text-center" style={{ width: '12%' }}>C. UNIT</th>
+                                                        <th className="text-center" style={{ width: '12%' }}>TOT. LÍNEA</th>
+                                                        <th className="text-center" style={{ width: '8%' }}>ACC.</th>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <th style={{ width: '25%' }}>PRODUCTO</th>
+                                                        <th className="text-center" style={{ width: '10%' }}>CANT.</th>
+                                                        <th className="text-center" style={{ width: '12%' }}>UNIDAD</th>
+                                                        <th className="text-center" style={{ width: '9%' }}>COSTO U.</th>
+                                                        <th className="text-center" style={{ width: '8%' }}>TOT. U.</th>
+                                                        <th className="text-center" style={{ width: '13%' }}>TOT. LÍNEA</th>
+                                                        <th className="text-center" style={{ width: '15%' }}>LOTE / VENC.</th>
+                                                        <th className="text-center" style={{ width: '8%' }}>ACC.</th>
+                                                    </>
+                                                )}
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {purchaseItems.map((item, idx) => (
+                                            {purchaseItems.map((item, idx) => {
+                                                const currentStock = item.current_stock ?? 0;
+                                                const countedQty = Number(item.quantity) || 0;
+                                                const difference = countedQty - currentStock;
+                                                const totalCost = difference * (Number(item.unit_cost) || 0);
+
+                                                return (
                                                 <tr key={item.product_id}>
                                                     <td>
                                                         <div className="grid-product">
@@ -1025,116 +1103,160 @@ const Inventory: React.FC = () => {
                                                             <span className="sku">{item.sku}</span>
                                                         </div>
                                                     </td>
-                                                    <td className="text-center">
-                                                        <input
-                                                            type="number"
-                                                            className="grid-input qty-input"
-                                                            value={item.quantity}
-                                                            onChange={(e) => updateItem(idx, 'quantity', e.target.value)}
-                                                            onFocus={(e) => { 
-                                                                e.target.select(); 
-                                                                setActiveItemIndex(idx); 
-                                                                setActiveField('quantity'); 
-                                                                setActiveKeyboard('numeric'); 
-                                                            }}
-                                                            inputMode="none"
-                                                        />
-                                                    </td>
-                                                     <td className="text-center">
-                                                        <select 
-                                                            className="grid-input-mini"
-                                                            value={item.multiplier}
-                                                            onChange={(e) => {
-                                                                const val = Number(e.target.value);
-                                                                const variant = item.variants.find((v: any) => v.quantity === val);
-                                                                const newItems = [...purchaseItems];
-                                                                newItems[idx].multiplier = val;
-                                                                newItems[idx].unit_name = variant ? variant.name : 'Unidad';
-                                                                setPurchaseItems(newItems);
-                                                                updateItem(idx, 'multiplier', val);
-                                                            }}
-                                                            style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', color: 'white', fontSize: '0.75rem', padding: '2px' }}
-                                                        >
-                                                            <option value={1}>UNIDAD</option>
-                                                            {item.variants?.map((v: any) => (
-                                                                <option key={v.id} value={v.quantity}>{v.name} ({v.quantity})</option>
-                                                            ))}
-                                                        </select>
-                                                    </td>
-                                                    <td className="text-center">
-                                                        <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 'bold' }}>
-                                                            ${(Number(item.unit_cost) || 0).toFixed(4)}
-                                                        </div>
-                                                    </td>
-                                                    <td className="text-center">
-                                                        <div style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', padding: '4px 8px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold' }}>
-                                                            {(Number(item.quantity) || 0) * (item.multiplier || 1)}
-                                                        </div>
-                                                    </td>
-                                                    <td className="text-center">
-                                                        <div className="cost-input">
-                                                            <span>$</span>
-                                                            {docType === 'transfer' ? (
-                                                                <div className="grid-input-readonly" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', fontVariantNumeric: 'tabular-nums', fontWeight: 'bold' }}>
-                                                                    {(Number(item.subtotal) || 0).toFixed(2)}
-                                                                </div>
-                                                            ) : (
+                                                    {docType === 'correction' ? (
+                                                        <>
+                                                            <td className="text-center font-bold" style={{ fontSize: '1.1rem' }}>
+                                                                {currentStock}
+                                                            </td>
+                                                            <td className="text-center">
                                                                 <input
                                                                     type="number"
-                                                                    className="grid-input highlight"
-                                                                    value={item.subtotal}
-                                                                    onChange={(e) => updateItem(idx, 'subtotal', e.target.value)}
+                                                                    className="grid-input qty-input"
+                                                                    value={item.quantity}
+                                                                    onChange={(e) => updateItem(idx, 'quantity', e.target.value)}
                                                                     onFocus={(e) => { 
                                                                         e.target.select(); 
                                                                         setActiveItemIndex(idx); 
-                                                                        setActiveField('subtotal'); 
+                                                                        setActiveField('quantity'); 
                                                                         setActiveKeyboard('numeric'); 
                                                                     }}
                                                                     inputMode="none"
                                                                 />
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="text-center">
-                                                        <div className="lot-inputs-row">
-                                                            <input
-                                                                type="text"
-                                                                className="grid-input-mini"
-                                                                placeholder="Lote"
-                                                                value={item.batch_number}
-                                                                onChange={(e) => updateItem(idx, 'batch_number', e.target.value)}
-                                                                onFocus={() => { 
-                                                                    setActiveItemIndex(idx); 
-                                                                    setActiveField('batch_number'); 
-                                                                    setActiveKeyboard('qwerty'); 
-                                                                }}
-                                                                inputMode="none"
-                                                            />
-                                                            <input
-                                                                type="text"
-                                                                className="grid-input-mini"
-                                                                placeholder="dd/mm/aaaa"
-                                                                value={item.expiration_date}
-                                                                onChange={(e) => updateItem(idx, 'expiration_date', e.target.value)}
-                                                                onFocus={() => { 
-                                                                    setActiveItemIndex(idx); 
-                                                                    setActiveField('expiration_date'); 
-                                                                    setActiveKeyboard('numeric'); 
-                                                                }}
-                                                                inputMode="none"
-                                                            />
-                                                        </div>
-                                                    </td>
-                                                    <td className="text-center">
-                                                        <button className="del-btn-mini" onClick={() => removeItem(idx)}>
-                                                            <Trash2 size={14} />
-                                                        </button>
-                                                    </td>
+                                                            </td>
+                                                            <td className={`text-center font-bold ${difference > 0 ? 'text-green' : difference < 0 ? 'text-red' : ''}`}>
+                                                                {difference > 0 ? '+' : ''}{difference}
+                                                            </td>
+                                                            <td className="text-center">
+                                                                <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 'bold' }}>
+                                                                    ${(Number(item.unit_cost) || 0).toFixed(4)}
+                                                                </div>
+                                                            </td>
+                                                            <td className="text-center">
+                                                                <div style={{ color: '#f59e0b', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                                                                    ${Math.abs(totalCost).toFixed(2)}
+                                                                </div>
+                                                            </td>
+                                                            <td className="text-center">
+                                                                <button className="del-btn-mini" onClick={() => removeItem(idx)}>
+                                                                    <Trash2 size={14} />
+                                                                </button>
+                                                            </td>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <td className="text-center">
+                                                                <input
+                                                                    type="number"
+                                                                    className="grid-input qty-input"
+                                                                    value={item.quantity}
+                                                                    onChange={(e) => updateItem(idx, 'quantity', e.target.value)}
+                                                                    onFocus={(e) => { 
+                                                                        e.target.select(); 
+                                                                        setActiveItemIndex(idx); 
+                                                                        setActiveField('quantity'); 
+                                                                        setActiveKeyboard('numeric'); 
+                                                                    }}
+                                                                    inputMode="none"
+                                                                />
+                                                            </td>
+                                                             <td className="text-center">
+                                                                <select 
+                                                                    className="grid-input-mini"
+                                                                    value={item.multiplier}
+                                                                    onChange={(e) => {
+                                                                        const val = Number(e.target.value);
+                                                                        const variant = item.variants.find((v: any) => v.quantity === val);
+                                                                        const newItems = [...purchaseItems];
+                                                                        newItems[idx].multiplier = val;
+                                                                        newItems[idx].unit_name = variant ? variant.name : 'Unidad';
+                                                                        setPurchaseItems(newItems);
+                                                                        updateItem(idx, 'multiplier', val);
+                                                                    }}
+                                                                    style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', color: 'white', fontSize: '0.75rem', padding: '2px' }}
+                                                                >
+                                                                    <option value={1}>UNIDAD</option>
+                                                                    {item.variants?.map((v: any) => (
+                                                                        <option key={v.id} value={v.quantity}>{v.name} ({v.quantity})</option>
+                                                                    ))}
+                                                                </select>
+                                                            </td>
+                                                            <td className="text-center">
+                                                                <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 'bold' }}>
+                                                                    ${(Number(item.unit_cost) || 0).toFixed(4)}
+                                                                </div>
+                                                            </td>
+                                                            <td className="text-center">
+                                                                <div style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', padding: '4px 8px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                                                                    {(Number(item.quantity) || 0) * (item.multiplier || 1)}
+                                                                </div>
+                                                            </td>
+                                                            <td className="text-center">
+                                                                <div className="cost-input">
+                                                                    <span>$</span>
+                                                                    {docType === 'transfer' ? (
+                                                                        <div className="grid-input-readonly" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', fontVariantNumeric: 'tabular-nums', fontWeight: 'bold' }}>
+                                                                            {(Number(item.subtotal) || 0).toFixed(2)}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <input
+                                                                            type="number"
+                                                                            className="grid-input highlight"
+                                                                            value={item.subtotal}
+                                                                            onChange={(e) => updateItem(idx, 'subtotal', e.target.value)}
+                                                                            onFocus={(e) => { 
+                                                                                e.target.select(); 
+                                                                                setActiveItemIndex(idx); 
+                                                                                setActiveField('subtotal'); 
+                                                                                setActiveKeyboard('numeric'); 
+                                                                            }}
+                                                                            inputMode="none"
+                                                                        />
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                            <td className="text-center">
+                                                                <div className="lot-inputs-row">
+                                                                    <input
+                                                                        type="text"
+                                                                        className="grid-input-mini"
+                                                                        placeholder="Lote"
+                                                                        value={item.batch_number}
+                                                                        onChange={(e) => updateItem(idx, 'batch_number', e.target.value)}
+                                                                        onFocus={() => { 
+                                                                            setActiveItemIndex(idx); 
+                                                                            setActiveField('batch_number'); 
+                                                                            setActiveKeyboard('qwerty'); 
+                                                                        }}
+                                                                        inputMode="none"
+                                                                    />
+                                                                    <input
+                                                                        type="text"
+                                                                        className="grid-input-mini"
+                                                                        placeholder="dd/mm/aaaa"
+                                                                        value={item.expiration_date}
+                                                                        onChange={(e) => updateItem(idx, 'expiration_date', e.target.value)}
+                                                                        onFocus={() => { 
+                                                                            setActiveItemIndex(idx); 
+                                                                            setActiveField('expiration_date'); 
+                                                                            setActiveKeyboard('numeric'); 
+                                                                        }}
+                                                                        inputMode="none"
+                                                                    />
+                                                                </div>
+                                                            </td>
+                                                            <td className="text-center">
+                                                                <button className="del-btn-mini" onClick={() => removeItem(idx)}>
+                                                                    <Trash2 size={14} />
+                                                                </button>
+                                                            </td>
+                                                        </>
+                                                    )}
                                                 </tr>
-                                            ))}
+                                                );
+                                            })}
                                             {/* Ghost Row for New Entry */}
                                             <tr className="ghost-row">
-                                                <td colSpan={6}>
+                                                <td colSpan={docType === 'correction' ? 7 : 8}>
                                                     <div 
                                                         className="item-search-wrapper"
                                                         style={{ 
@@ -1148,7 +1270,7 @@ const Inventory: React.FC = () => {
                                                         <Plus size={20} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#3b82f6', pointerEvents: 'none', zIndex: 5 }} />
                                                         <input
                                                             type="text"
-                                                            placeholder="Buscar producto por nombre o SKU..."
+                                                            placeholder={docType === 'correction' ? "Buscar producto para conteo..." : "Buscar producto por nombre o SKU..."}
                                                             value={itemSearch}
                                                             onChange={(e) => {
                                                                 const val = e.target.value;
@@ -1205,7 +1327,13 @@ const Inventory: React.FC = () => {
                                                                             <span className="pn">{highlightMatch(p.name, itemSearch)}</span>
                                                                             <span className="ps">{highlightMatch(p.sku, itemSearch)}</span>
                                                                         </div>
-                                                                        <span className="pstock">{p.stock_level} en stock</span>
+                                                                        {docType === 'correction' ? (
+                                                                            <span className="pstock" style={{ color: '#f59e0b', fontWeight: 800 }}>
+                                                                                Stock: {p.inventory?.find((i: any) => i.branchId === selectedBranch)?.stockLevel || 0} UN
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="pstock">{p.stock_level} en stock</span>
+                                                                        )}
                                                                     </div>
                                                                 ))}
                                                                 {filteredItemSearch.length === 0 && (
@@ -1254,7 +1382,7 @@ const Inventory: React.FC = () => {
                                     disabled={purchaseItems.length === 0}
                                     onClick={handleSavePurchase}
                                 >
-                                    <CheckCircle2 size={18} /> {docType === 'transfer' ? 'Procesar Traslado' : 'Procesar Movimiento'}
+                                    <CheckCircle2 size={18} /> {docType === 'transfer' ? 'Procesar Traslado' : docType === 'correction' ? 'Aplicar Corrección' : 'Procesar Movimiento'}
                                 </button>
                             </div>
                         </footer>
@@ -1437,6 +1565,8 @@ const Inventory: React.FC = () => {
                                                 <th>REFERENCIA</th>
                                                 <th className="text-right">S. INICIAL</th>
                                                 <th className="text-right">MOV</th>
+                                                <th className="text-right">C. UNIT</th>
+                                                <th className="text-right">TOTAL</th>
                                                 <th className="text-right">S. FINAL</th>
                                                 <th>USUARIO</th>
                                             </tr>
@@ -1456,6 +1586,12 @@ const Inventory: React.FC = () => {
                                                     </td>
                                                     <td className={`text-right font-bold ${item.quantity > 0 ? 'text-green' : 'text-red'}`}>
                                                         {item.quantity > 0 ? '+' : ''}{item.quantity}
+                                                    </td>
+                                                    <td className="text-right font-mono" style={{ color: '#94a3b8' }}>
+                                                        ${Number(item.unitCost || 0).toFixed(2)}
+                                                    </td>
+                                                    <td className="text-right font-mono" style={{ color: '#f59e0b' }}>
+                                                        ${Number(item.totalCost || 0).toFixed(2)}
                                                     </td>
                                                     <td className="text-right font-bold balance">
                                                         {item.finalBalance}
@@ -1708,9 +1844,8 @@ const Inventory: React.FC = () => {
                 }
                 .erp-modal {
                     background: #1e293b;
-                    width: 95vw;
-                    max-width: 1400px;
-                    height: 90vh;
+                    width: min(95vw, 1400px);
+                    height: min(90vh, 1400px);
                     border-radius: 32px;
                     border: 1px solid #334155;
                     display: flex;
@@ -1722,6 +1857,21 @@ const Inventory: React.FC = () => {
                 @keyframes modal-slide-up {
                     from { opacity: 0; transform: translateY(20px); }
                     to { opacity: 1; transform: translateY(0); }
+                }
+
+                @media (max-width: 640px) {
+                    .modal-overlay {
+                        padding: 0;
+                        align-items: flex-end;
+                    }
+                    .erp-modal {
+                        width: 100%;
+                        height: 92vh;
+                        border-radius: 24px 24px 0 0;
+                    }
+                    .erp-modal-header {
+                        padding: 1.25rem;
+                    }
                 }
 
                 .erp-modal-header {
@@ -2225,6 +2375,8 @@ const Inventory: React.FC = () => {
                                                 <th>REFERENCIA</th>
                                                 <th className="text-right">S. INICIAL</th>
                                                 <th className="text-right">MOV</th>
+                                                <th className="text-right">C. UNIT</th>
+                                                <th className="text-right">TOTAL</th>
                                                 <th className="text-right">S. FINAL</th>
                                                 <th>USUARIO</th>
                                                 <th className="text-center">ACC.</th>
@@ -2245,6 +2397,12 @@ const Inventory: React.FC = () => {
                                                     </td>
                                                     <td className={`text-right font-bold ${item.quantity > 0 ? 'text-green' : 'text-red'}`}>
                                                         {item.quantity > 0 ? '+' : ''}{item.quantity}
+                                                    </td>
+                                                    <td className="text-right font-mono" style={{ color: '#94a3b8' }}>
+                                                        ${Number(item.unitCost || 0).toFixed(2)}
+                                                    </td>
+                                                    <td className="text-right font-mono" style={{ color: '#f59e0b' }}>
+                                                        ${Number(item.totalCost || 0).toFixed(2)}
                                                     </td>
                                                     <td className="text-right font-bold balance">
                                                         {item.finalBalance}

@@ -121,7 +121,7 @@ const createPurchase = async (req, res) => {
         });
 
         // Notify other clients about inventory change
-        if (io) {
+        if (getIO()) {
             getIO().emit('INVENTORY_UPDATED', { branchId: branch_id });
             getIO().emit('PURCHASE_CREATED', { purchaseId: result.id, total: result.total });
         }

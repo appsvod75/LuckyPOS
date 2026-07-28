@@ -90,7 +90,7 @@ const createSale = async (req, res) => {
         await logAudit(user_id, 'CREATE_SALE', { saleId: sale.id, total: sale.total, itemsCount: items.length }, branch_id);
 
         // Notify other clients about inventory change
-        if (io) {
+        if (getIO()) {
             getIO().emit('INVENTORY_UPDATED', { branchId: branch_id });
             getIO().emit('SALE_CREATED', { saleId: sale.id, total: sale.total });
         }
@@ -477,7 +477,7 @@ const updateSale = async (req, res) => {
         }, { timeout: 15000 });
 
         await logAudit(user_id, 'UPDATE_SALE', { saleId: id, total: result.total }, result.branchId);
-        if (io) {
+        if (getIO()) {
             getIO().emit('INVENTORY_UPDATED', { branchId: result.branchId });
             getIO().emit('SALE_UPDATED', { saleId: result.id, total: result.total });
         }
@@ -541,7 +541,7 @@ const deleteSale = async (req, res) => {
             });
         });
 
-        if (io) {
+        if (getIO()) {
             getIO().emit('INVENTORY_UPDATED', { branchId: saleBranchId });
             getIO().emit('SALE_DELETED', { saleId: parseInt(id) });
         }
